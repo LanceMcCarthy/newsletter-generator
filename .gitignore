@@ -46,6 +46,7 @@ log/
 # Temp files
 *.tmp
 *.temp
+feed.xml
 
 ## Generated newsletter output ##
 output/
