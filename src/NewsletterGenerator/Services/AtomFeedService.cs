@@ -50,7 +50,10 @@ public partial class AtomFeedService(ILogger<AtomFeedService> logger, HttpClient
         ServiceLogMessages.FeedResponseLength(logger, xml.Length);
 
         using var stringReader = new StringReader(xml);
-        using var xmlReader = XmlReader.Create(stringReader);
+        using var xmlReader = XmlReader.Create(stringReader, new XmlReaderSettings
+        {
+            IgnoreComments = true
+        });
         var feed = SyndicationFeed.Load(xmlReader);
 
         var keywords = categoryKeywords?

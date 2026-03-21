@@ -187,6 +187,40 @@ public class AtomFeedServiceTests
         Assert.Equal("https://code.visualstudio.com/updates/v1_110", entry.Url);
     }
 
+    [Fact]
+    public async Task FetchFeedWithMetricsAsync_IgnoresCommentsInsideAtomTitle()
+    {
+        const string atomFeed = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <feed xmlns="http://www.w3.org/2005/Atom">
+              <title>Visual Studio Code 1.113 <!-- %IF INSIDERS % (Insiders) %ENDIF % --></title>
+              <updated>2026-03-19T17:00:00.000Z</updated>
+              <entry>
+                <title>March 19, 2026</title>
+                <link href="https://code.visualstudio.com/updates/v1_113" />
+                <updated>2026-03-19T17:00:00.000Z</updated>
+                <id>https://code.visualstudio.com/updates/v1_113</id>
+                <summary type="html">&lt;p&gt;Insiders release notes.&lt;/p&gt;</summary>
+              </entry>
+            </feed>
+            """;
+
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(atomFeed));
+        var service = new AtomFeedService(NullLogger<AtomFeedService>.Instance, httpClient);
+
+        var result = await service.FetchFeedWithMetricsAsync(
+            "https://code.visualstudio.com/feed.xml",
+            new DateOnly(2026, 3, 18),
+            new DateOnly(2026, 3, 20),
+            preferShortSummary: true,
+            maxContentChars: 1000);
+
+        var entry = Assert.Single(result.Entries);
+        Assert.Equal("March 19, 2026", entry.Version);
+        Assert.Contains("Insiders release notes.", entry.PlainText);
+        Assert.Equal("https://code.visualstudio.com/updates/v1_113", entry.Url);
+    }
+
     private sealed class StubHttpMessageHandler(string content) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
