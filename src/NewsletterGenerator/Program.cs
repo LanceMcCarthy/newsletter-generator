@@ -339,6 +339,24 @@ internal static class NewsletterApp
                 metrics.StageSeconds["Write output"] = writeStopwatch.Elapsed.TotalSeconds;
 
                 AnsiConsole.MarkupLine($"[green]✓[/] Newsletter written to [underline]{Markup.Escape(outputPath)}[/]");
+
+                // Copy to clipboard
+                var clipboardService = new ClipboardService(loggerFactory.CreateLogger<ClipboardService>());
+                var clipboardStopwatch = Stopwatch.StartNew();
+                var clipboardSuccess = await clipboardService.TrySetClipboardTextAsync(content);
+                clipboardStopwatch.Stop();
+                metrics.StageSeconds["Copy to clipboard"] = clipboardStopwatch.Elapsed.TotalSeconds;
+
+                if (clipboardSuccess)
+                {
+                    AnsiConsole.MarkupLine("[green]✓[/] Newsletter copied to clipboard");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine("[yellow]⚠[/] Could not copy newsletter to clipboard");
+                    metrics.Warnings.Add("Failed to copy newsletter content to clipboard.");
+                }
+
                 AnsiConsole.WriteLine();
 
                 if (!Console.IsOutputRedirected)
