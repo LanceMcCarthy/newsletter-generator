@@ -204,6 +204,7 @@ internal static class NewsletterApp
         if (!Console.IsOutputRedirected)
             RenderHeader();
 
+        var aggregateMetrics = new AggregateRunMetrics();
         bool runAgain;
         do
         {
@@ -239,17 +240,6 @@ internal static class NewsletterApp
             var weekEndDate = today;
             var weekStartDate = today.AddDays(-selectedDaysBack);
             var daySpan = weekEndDate.DayNumber - weekStartDate.DayNumber + 1;
-
-            RenderPreRunSummary(selectedNewsletter, selectedModel, useCache, forceRefresh, clearCache, weekStartDate, weekEndDate, daySpan, nonInteractive);
-
-            if (!nonInteractive && !settings.Yes)
-            {
-                if (!AnsiConsole.Confirm("Proceed with generation?", true))
-                {
-                    AnsiConsole.MarkupLine("[yellow]Generation cancelled.[/]");
-                    return 0;
-                }
-            }
 
             var cacheDir = Path.Combine(repoRoot, "src", "NewsletterGenerator", ".cache");
 
@@ -308,11 +298,44 @@ internal static class NewsletterApp
             metrics.CacheMisses = cache.CacheMisses;
             metrics.CacheSkips = cache.CacheSkips;
             metrics.CacheSections = cache.GetSectionMetrics();
+            metrics.Newsletter = selectedNewsletter;
+            metrics.Model = selectedModel;
 
             if (!string.IsNullOrWhiteSpace(content))
             {
                 content = PrefixNewsletterName(content, title, weekStartDate, weekEndDate, selectedModel);
                 content = content.Replace('—', '-').Replace('–', '-');
+
+                if (!nonInteractive)
+                {
+                    RenderGeneratedPreview(selectedNewsletter, content);
+
+                    var revisionPassCount = 0;
+                    while (true)
+                    {
+                        var revisionRequest = PromptForRevisionRequest(revisionPassCount > 0);
+                        if (string.IsNullOrWhiteSpace(revisionRequest))
+                            break;
+
+                        var revisionStopwatch = Stopwatch.StartNew();
+                        var newsletterService = new NewsletterService(loggerFactory.CreateLogger<NewsletterService>());
+                        content = await newsletterService.ReviseNewsletterMarkdownAsync(
+                            content,
+                            revisionRequest,
+                            GetNewsletterLabel(selectedNewsletter),
+                            selectedModel);
+                        content = content.Replace('—', '-').Replace('–', '-');
+                        revisionStopwatch.Stop();
+
+                        metrics.StageSeconds["Apply revisions"] =
+                            metrics.StageSeconds.GetValueOrDefault("Apply revisions") + revisionStopwatch.Elapsed.TotalSeconds;
+                        metrics.RevisionApplied = true;
+                        revisionPassCount++;
+
+                        AnsiConsole.MarkupLine("[green]✓[/] Revisions applied");
+                        RenderGeneratedPreview(selectedNewsletter, content);
+                    }
+                }
 
                 var outputDir = Path.Combine(repoRoot, "output");
                 Directory.CreateDirectory(outputDir);
@@ -350,24 +373,12 @@ internal static class NewsletterApp
                 if (clipboardSuccess)
                 {
                     AnsiConsole.MarkupLine("[green]✓[/] Newsletter copied to clipboard");
+                    metrics.ClipboardSucceeded = true;
                 }
                 else
                 {
                     AnsiConsole.MarkupLine("[yellow]⚠[/] Could not copy newsletter to clipboard");
                     metrics.Warnings.Add("Failed to copy newsletter content to clipboard.");
-                }
-
-                AnsiConsole.WriteLine();
-
-                if (!Console.IsOutputRedirected)
-                {
-                    var preview = string.Join('\n', content.Split('\n').Take(25));
-                    AnsiConsole.Write(
-                        new Panel(Markup.Escape(preview))
-                            .Header("[cornflowerblue] Preview (first 25 lines) [/]")
-                            .Border(BoxBorder.Rounded)
-                            .BorderColor(Color.Grey)
-                            .Expand());
                 }
             }
             else
@@ -377,8 +388,7 @@ internal static class NewsletterApp
 
             runStopwatch.Stop();
             metrics.TotalWallSeconds = runStopwatch.Elapsed.TotalSeconds;
-
-            RenderRunDashboard(metrics, selectedNewsletter, selectedModel, useCache, weekStartDate, weekEndDate);
+            aggregateMetrics.AddRun(metrics);
 
             runAgain = !nonInteractive && AnsiConsole.Confirm("Generate another newsletter?", false);
             if (runAgain)
@@ -389,6 +399,11 @@ internal static class NewsletterApp
             }
         }
         while (runAgain);
+
+        if (aggregateMetrics.TotalRuns > 0)
+        {
+            RenderAggregateDashboard(aggregateMetrics);
+        }
 
         return 0;
     }
@@ -771,6 +786,187 @@ internal static class NewsletterApp
         sb.AppendLine();
         sb.AppendLine(content.TrimStart());
         return sb.ToString();
+    }
+
+    private static void RenderGeneratedPreview(NewsletterType newsletter, string content)
+    {
+        if (Console.IsOutputRedirected)
+            return;
+
+        var preview = new StringBuilder();
+        var title = ExtractMarkdownTitle(content);
+        var welcome = ExtractWelcomeSummary(content);
+
+        if (!string.IsNullOrWhiteSpace(title))
+        {
+            preview.AppendLine(title);
+            preview.AppendLine();
+        }
+
+        if (!string.IsNullOrWhiteSpace(welcome))
+        {
+            preview.AppendLine(welcome);
+            preview.AppendLine();
+        }
+
+        foreach (var section in ExtractPreviewSections(newsletter, content).Take(2))
+        {
+            preview.AppendLine(section.Heading);
+            foreach (var item in section.Items.Take(3))
+                preview.AppendLine($"- {item}");
+            preview.AppendLine();
+        }
+
+        AnsiConsole.Write(new Panel(Markup.Escape(preview.ToString().TrimEnd()))
+            .Header("[cornflowerblue]Preview[/]")
+            .Border(BoxBorder.Rounded)
+            .BorderColor(Color.Grey)
+            .Expand());
+        AnsiConsole.WriteLine();
+    }
+
+    private static string PromptForRevisionRequest(bool isAdditionalRequest)
+    {
+        return AnsiConsole.Prompt(
+            new TextPrompt<string>(isAdditionalRequest
+                ? "[yellow]Additional revision request[/] [grey](press Enter to finish)[/]"
+                : "[yellow]Revision request[/] [grey](press Enter to keep as-is)[/]")
+                .PromptStyle("green")
+                .AllowEmpty());
+    }
+
+    private static string ExtractMarkdownTitle(string content)
+    {
+        return content.Split('\n')
+            .FirstOrDefault(line => line.StartsWith("# ", StringComparison.Ordinal))?
+            .Substring(2)
+            .Trim() ?? string.Empty;
+    }
+
+    private static IReadOnlyList<PreviewSection> ExtractPreviewSections(NewsletterType newsletter, string content)
+    {
+        var sections = new List<PreviewSection>();
+        var lines = content.Split('\n');
+        string? currentHeading = null;
+        List<string> currentLines = [];
+
+        void FlushSection()
+        {
+            if (string.IsNullOrWhiteSpace(currentHeading))
+                return;
+
+            if (!ShouldIncludePreviewSection(currentHeading))
+                return;
+
+            var items = BuildPreviewItems(newsletter, currentHeading, currentLines);
+            if (items.Count > 0)
+                sections.Add(new PreviewSection(currentHeading, items));
+        }
+
+        foreach (var line in lines)
+        {
+            if (line.StartsWith("## ", StringComparison.Ordinal))
+            {
+                FlushSection();
+                currentHeading = line[3..].Trim();
+                currentLines = [];
+                continue;
+            }
+
+            if (currentHeading is not null)
+                currentLines.Add(line);
+        }
+
+        FlushSection();
+        return sections;
+    }
+
+    private static bool ShouldIncludePreviewSection(string heading)
+    {
+        return !heading.Equals("Welcome", StringComparison.OrdinalIgnoreCase)
+            && !heading.Equals("News and Announcements", StringComparison.OrdinalIgnoreCase)
+            && !heading.Equals("Office Hours", StringComparison.OrdinalIgnoreCase)
+            && !heading.Equals("Get Started", StringComparison.OrdinalIgnoreCase)
+            && !heading.Equals("Training and Courses", StringComparison.OrdinalIgnoreCase)
+            && !heading.Equals("Stay Up To Date & Engage", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<string> BuildPreviewItems(NewsletterType newsletter, string heading, List<string> lines)
+    {
+        var items = new List<string>();
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("### Releases", StringComparison.Ordinal))
+                break;
+
+            if (trimmed.StartsWith("- ", StringComparison.Ordinal))
+                items.Add(CleanPreviewText(trimmed[2..]));
+        }
+
+        if (items.Count > 0)
+            return items;
+
+        var paragraphLines = new List<string>();
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed))
+            {
+                if (paragraphLines.Count > 0)
+                    break;
+                continue;
+            }
+
+            if (trimmed.StartsWith("### ", StringComparison.Ordinal) || trimmed.StartsWith("---", StringComparison.Ordinal))
+                continue;
+
+            paragraphLines.Add(trimmed);
+        }
+
+        if (paragraphLines.Count > 0)
+            items.Add(CleanPreviewText(string.Join(' ', paragraphLines)));
+
+        return items;
+    }
+
+    private static string CleanPreviewText(string text)
+    {
+        return text
+            .Replace("**", string.Empty, StringComparison.Ordinal)
+            .Replace("`", string.Empty, StringComparison.Ordinal)
+            .Trim();
+    }
+
+    private static void RenderAggregateDashboard(AggregateRunMetrics aggregate)
+    {
+        if (Console.IsOutputRedirected)
+            return;
+
+        var summaryTable = new Table()
+            .Border(TableBorder.Rounded)
+            .BorderColor(Color.Grey)
+            .AddColumn("[bold]Metric[/]")
+            .AddColumn("[bold]Value[/]");
+
+        var runMix = string.Join(", ", aggregate.RunsByNewsletter.Select(kvp => $"{Markup.Escape(GetNewsletterLabel(kvp.Key))}: {kvp.Value}"));
+        summaryTable.AddRow("Runs", aggregate.TotalRuns.ToString());
+        summaryTable.AddRow("Newsletter mix", string.IsNullOrWhiteSpace(runMix) ? "(none)" : runMix);
+        summaryTable.AddRow("Revisions applied", aggregate.RevisedRuns.ToString());
+        summaryTable.AddRow("Copied to clipboard", aggregate.ClipboardSuccessRuns.ToString());
+        summaryTable.AddRow("Cache", $"hits {aggregate.CacheHits}, misses {aggregate.CacheMisses}, skips {aggregate.CacheSkips}");
+        summaryTable.AddRow("Output", $"{aggregate.OutputCharacters:N0} chars, {aggregate.OutputLines:N0} lines");
+        summaryTable.AddRow("Timing", $"total {aggregate.TotalWallSeconds:F1}s, avg {aggregate.AverageWallSeconds:F1}s per run");
+        summaryTable.AddRow("Warnings", aggregate.WarningCount.ToString());
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.Write(new Panel(summaryTable)
+            .Header("[cornflowerblue]Aggregate Metrics[/]")
+            .Border(BoxBorder.Rounded)
+            .BorderColor(Color.Grey)
+            .Expand());
+        AnsiConsole.WriteLine();
     }
 
     private static bool MentionsVsCode(ReleaseEntry entry)
@@ -1652,6 +1848,46 @@ internal sealed class RunMetrics
     public int OutputSections { get; set; }
     public bool StreamingEnabled { get; set; } = true;
     public string ReasoningEffort { get; set; } = "low";
+    public bool RevisionApplied { get; set; }
+    public bool ClipboardSucceeded { get; set; }
+    public NewsletterType Newsletter { get; set; } = NewsletterType.CopilotCliSdk;
+    public string Model { get; set; } = string.Empty;
+}
+
+internal sealed record PreviewSection(string Heading, IReadOnlyList<string> Items);
+
+internal sealed class AggregateRunMetrics
+{
+    public int TotalRuns { get; private set; }
+    public Dictionary<NewsletterType, int> RunsByNewsletter { get; } = [];
+    public int RevisedRuns { get; private set; }
+    public int ClipboardSuccessRuns { get; private set; }
+    public int CacheHits { get; private set; }
+    public int CacheMisses { get; private set; }
+    public int CacheSkips { get; private set; }
+    public int OutputCharacters { get; private set; }
+    public int OutputLines { get; private set; }
+    public int WarningCount { get; private set; }
+    public double TotalWallSeconds { get; private set; }
+    public double AverageWallSeconds => TotalRuns == 0 ? 0 : TotalWallSeconds / TotalRuns;
+
+    public void AddRun(RunMetrics metrics)
+    {
+        TotalRuns++;
+        RunsByNewsletter[metrics.Newsletter] = RunsByNewsletter.GetValueOrDefault(metrics.Newsletter) + 1;
+        if (metrics.RevisionApplied)
+            RevisedRuns++;
+        if (metrics.ClipboardSucceeded)
+            ClipboardSuccessRuns++;
+
+        CacheHits += metrics.CacheHits;
+        CacheMisses += metrics.CacheMisses;
+        CacheSkips += metrics.CacheSkips;
+        OutputCharacters += metrics.OutputCharacters;
+        OutputLines += metrics.OutputLines;
+        WarningCount += metrics.Warnings.Count;
+        TotalWallSeconds += metrics.TotalWallSeconds;
+    }
 }
 
 internal sealed record SourceCount(string Source, string RawCount, string FilteredCount, string FinalCount, string Notes);

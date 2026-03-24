@@ -430,6 +430,47 @@ public class NewsletterService(ILogger<NewsletterService> logger)
         return combined;
     }
 
+    public async Task<string> ReviseNewsletterMarkdownAsync(
+        string markdown,
+        string revisionRequest,
+        string newsletterLabel,
+        string? model = null)
+    {
+        logger.LogInformation("Revising newsletter markdown (model={Model})", model);
+        AnsiConsole.MarkupLine("[grey]Applying revisions...[/]");
+
+        await using var copilot = await CreateStartedSessionAsync(
+            model,
+            """
+                    You revise existing markdown newsletters for an internal developer audience.
+                    Keep the tone direct, factual, and concise.
+                    Preserve the existing markdown structure, headings, and links unless the request explicitly asks to change them.
+                    Return only the full revised markdown document.
+                    """);
+
+        var prompt = $"""
+            Apply the requested revisions to this {newsletterLabel} markdown newsletter.
+
+            RULES:
+            - Return the FULL revised markdown document.
+            - Keep the existing headings, links, and overall structure unless the request says otherwise.
+            - Keep the tone no-nonsense and developer-to-developer.
+            - Do not add any explanation outside the markdown.
+
+            Revision request:
+            {revisionRequest}
+
+            Current markdown:
+            ```markdown
+            {markdown}
+            ```
+            """;
+
+        var result = await SendPromptAsync(copilot.Session, prompt);
+        logger.LogInformation("Revised newsletter markdown generated ({Length} chars)", result.Length);
+        return result;
+    }
+
     public async Task<string> GenerateVsCodeNewsletterAsync(
         VSCodeReleaseNotes releaseNotes,
         List<ReleaseEntry> vscodeBlogEntries,

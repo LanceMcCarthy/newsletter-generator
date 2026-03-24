@@ -47,3 +47,14 @@ This is a .NET 10 console app that generates a weekly markdown newsletter about 
 - **Constructor DI via primary constructors** — Services use primary constructor parameters (e.g., `class AtomFeedService(HttpClient? httpClient = null)`).
 - **AI prompt tone** — System prompts enforce a professional, non-marketing tone. Never use hyperbolic language like "groundbreaking" or "game-changing" in prompts. The audience is skeptical internal engineers.
 - **Collection expressions** — Uses C# 12 collection expressions (`List<T> items = [];`).
+
+## Markdown Prose Style
+
+- Write in a no-nonsense developer-to-developer tone.
+- Prefer plain, direct wording over launch-marketing or "AI assistant" phrasing.
+- Avoid inflated phrases such as "meaningful milestone release", "receiving designation", "surgically edit", "friendlier wrappers", or similar language that sounds promotional or synthetic.
+- State what changed, who it affects, and why it matters in concrete terms.
+- Keep prose tight. Shorter sentences are preferred when they say the same thing.
+- In newsletter copy, the Welcome section should briefly frame the week rather than recap every detail.
+- In section summaries and release bullets, favor literal wording like "adds", "changes", "supports", "requires", and "fixes".
+- Do not overstate impact. If a change is mainly relevant to one SDK or one language, say that directly.
