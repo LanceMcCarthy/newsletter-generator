@@ -547,6 +547,10 @@ internal static partial class NewsletterApp
         List<ReleaseEntry> typeScriptBlogEntries = [];
         List<ReleaseEntry> githubBlogEntries = [];
         List<ReleaseEntry> youtubeDotNetEntries = [];
+        List<ReleaseEntry> youtubeVSEntries = [];
+        List<ReleaseEntry> youtubeVSCodeEntries = [];
+        List<ReleaseEntry> youtubeGitHubEntries = [];
+        List<ReleaseEntry> youtubeMicrosoftDevEntries = [];
 
         FeedFetchResult? cliFetchResult = null;
         FeedFetchResult? sdkFetchResult = null;
@@ -560,6 +564,10 @@ internal static partial class NewsletterApp
         FeedFetchResult? typeScriptBlogResult = null;
         FeedFetchResult? githubBlogResult = null;
         FeedFetchResult? youtubeDotNetResult = null;
+        FeedFetchResult? youtubeVSResult = null;
+        FeedFetchResult? youtubeVSCodeResult = null;
+        FeedFetchResult? youtubeGitHubResult = null;
+        FeedFetchResult? youtubeMicrosoftDevResult = null;
         VSCodeReleaseNotesFetchResult? vscodeNotesResult = null;
 
         await AnsiConsole.Progress().AutoClear(false).HideCompleted(false).StartAsync(async ctx =>
@@ -577,6 +585,10 @@ internal static partial class NewsletterApp
             const string tsLabel = "TypeScript blog";
             const string githubBlogLabel = "GitHub blog";
             const string youtubeDotNetLabel = "YouTube .NET";
+            const string youtubeVSLabel = "YouTube Visual Studio";
+            const string youtubeVSCodeLabel = "YouTube VS Code";
+            const string youtubeGitHubLabel = "YouTube GitHub";
+            const string youtubeMicrosoftDevLabel = "YouTube Microsoft Dev";
 
             var cliTask = AddInactiveTask(ctx, cliLabel);
             var sdkTask = AddInactiveTask(ctx, sdkLabel);
@@ -591,6 +603,10 @@ internal static partial class NewsletterApp
             var tsTask = AddInactiveTask(ctx, tsLabel);
             var githubBlogTask = AddInactiveTask(ctx, githubBlogLabel);
             var youtubeDotNetTask = AddInactiveTask(ctx, youtubeDotNetLabel);
+            var youtubeVSTask = AddInactiveTask(ctx, youtubeVSLabel);
+            var youtubeVSCodeTask = AddInactiveTask(ctx, youtubeVSCodeLabel);
+            var youtubeGitHubTask = AddInactiveTask(ctx, youtubeGitHubLabel);
+            var youtubeMicrosoftDevTask = AddInactiveTask(ctx, youtubeMicrosoftDevLabel);
 
             // Fetch all feeds - CLI/SDK releases + blog feeds
             cliFetchResult = await RunTrackedTaskAsync(
@@ -670,6 +686,30 @@ internal static partial class NewsletterApp
                 () => feedService.FetchFeedWithMetricsAsync(FeedUrls.YouTubeDotNet, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 500),
                 metrics, "Fetch: YouTube .NET");
             youtubeDotNetEntries = youtubeDotNetResult.Entries;
+
+            youtubeVSResult = await RunTrackedTaskAsync(
+                youtubeVSTask, youtubeVSLabel,
+                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.YouTubeVisualStudio, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 500),
+                metrics, "Fetch: YouTube Visual Studio");
+            youtubeVSEntries = youtubeVSResult.Entries;
+
+            youtubeVSCodeResult = await RunTrackedTaskAsync(
+                youtubeVSCodeTask, youtubeVSCodeLabel,
+                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.YouTubeVSCode, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 500),
+                metrics, "Fetch: YouTube VS Code");
+            youtubeVSCodeEntries = youtubeVSCodeResult.Entries;
+
+            youtubeGitHubResult = await RunTrackedTaskAsync(
+                youtubeGitHubTask, youtubeGitHubLabel,
+                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.YouTubeGitHub, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 500),
+                metrics, "Fetch: YouTube GitHub");
+            youtubeGitHubEntries = youtubeGitHubResult.Entries;
+
+            youtubeMicrosoftDevResult = await RunTrackedTaskAsync(
+                youtubeMicrosoftDevTask, youtubeMicrosoftDevLabel,
+                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.YouTubeMicrosoftDev, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 500),
+                metrics, "Fetch: YouTube Microsoft Dev");
+            youtubeMicrosoftDevEntries = youtubeMicrosoftDevResult.Entries;
         });
 
         // Consolidate CLI/SDK prereleases
@@ -691,12 +731,18 @@ internal static partial class NewsletterApp
         metrics.SourceCounts.Add(new SourceCount("TypeScript Blog", (typeScriptBlogResult?.TotalItems ?? 0).ToString(), (typeScriptBlogResult?.InRangeItems ?? 0).ToString(), typeScriptBlogEntries.Count.ToString(), "Blog posts"));
         metrics.SourceCounts.Add(new SourceCount("GitHub Blog", (githubBlogResult?.TotalItems ?? 0).ToString(), (githubBlogResult?.InRangeItems ?? 0).ToString(), githubBlogEntries.Count.ToString(), "Blog posts"));
         metrics.SourceCounts.Add(new SourceCount("YouTube .NET", (youtubeDotNetResult?.TotalItems ?? 0).ToString(), (youtubeDotNetResult?.InRangeItems ?? 0).ToString(), youtubeDotNetEntries.Count.ToString(), "Videos"));
+        metrics.SourceCounts.Add(new SourceCount("YouTube Visual Studio", (youtubeVSResult?.TotalItems ?? 0).ToString(), (youtubeVSResult?.InRangeItems ?? 0).ToString(), youtubeVSEntries.Count.ToString(), "Videos"));
+        metrics.SourceCounts.Add(new SourceCount("YouTube VS Code", (youtubeVSCodeResult?.TotalItems ?? 0).ToString(), (youtubeVSCodeResult?.InRangeItems ?? 0).ToString(), youtubeVSCodeEntries.Count.ToString(), "Videos"));
+        metrics.SourceCounts.Add(new SourceCount("YouTube GitHub", (youtubeGitHubResult?.TotalItems ?? 0).ToString(), (youtubeGitHubResult?.InRangeItems ?? 0).ToString(), youtubeGitHubEntries.Count.ToString(), "Videos"));
+        metrics.SourceCounts.Add(new SourceCount("YouTube Microsoft Dev", (youtubeMicrosoftDevResult?.TotalItems ?? 0).ToString(), (youtubeMicrosoftDevResult?.InRangeItems ?? 0).ToString(), youtubeMicrosoftDevEntries.Count.ToString(), "Videos"));
 
         var vscodeFeatureCount = vscodeReleaseNotes?.Features.Count ?? 0;
         var totalItems = cliReleases.Count + sdkReleases.Count + changelogEntries.Count +
             vscodeFeatureCount + vscodeBlogEntries.Count + dotNetBlogEntries.Count + devBlogEntries.Count +
             vsBlogEntries.Count + azureBlogEntries.Count + aspireBlogEntries.Count +
-            typeScriptBlogEntries.Count + githubBlogEntries.Count + youtubeDotNetEntries.Count;
+            typeScriptBlogEntries.Count + githubBlogEntries.Count + youtubeDotNetEntries.Count +
+            youtubeVSEntries.Count + youtubeVSCodeEntries.Count + youtubeGitHubEntries.Count +
+            youtubeMicrosoftDevEntries.Count;
 
         if (totalItems == 0)
         {
@@ -726,50 +772,162 @@ internal static partial class NewsletterApp
         table.AddRow("[cornflowerblue]TypeScript Blog[/]", CountCell(typeScriptBlogEntries.Count));
         table.AddRow("[cornflowerblue]GitHub Blog[/]", CountCell(githubBlogEntries.Count));
         table.AddRow("[cornflowerblue]YouTube .NET[/]", CountCell(youtubeDotNetEntries.Count));
+        table.AddRow("[cornflowerblue]YouTube Visual Studio[/]", CountCell(youtubeVSEntries.Count));
+        table.AddRow("[cornflowerblue]YouTube VS Code[/]", CountCell(youtubeVSCodeEntries.Count));
+        table.AddRow("[cornflowerblue]YouTube GitHub[/]", CountCell(youtubeGitHubEntries.Count));
+        table.AddRow("[cornflowerblue]YouTube Microsoft Dev[/]", CountCell(youtubeMicrosoftDevEntries.Count));
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
 
         var newsletterService = new NewsletterService(loggerFactory.CreateLogger<NewsletterService>());
+
+        // Detect major releases from blog pool
+        List<ReleaseEntry> blogPool = [..dotNetBlogEntries, ..devBlogEntries, ..azureBlogEntries,
+            ..aspireBlogEntries, ..typeScriptBlogEntries, ..githubBlogEntries];
+        var majorReleases = NewsletterService.DetectMajorReleases(blogPool);
+        var majorReleaseTitles = majorReleases.Select(e => e.Version).ToList();
+
+        if (majorReleases.Count > 0)
+        {
+            AnsiConsole.MarkupLine($"[cornflowerblue]Detected {majorReleases.Count} major release(s):[/]");
+            foreach (var mr in majorReleases)
+                AnsiConsole.MarkupLine($"  [white]{Markup.Escape(mr.Version)}[/]");
+            AnsiConsole.WriteLine();
+        }
+
+        string copilotSection = string.Empty;
+        string vscodeSection = string.Empty;
+        string vsSection = string.Empty;
+        List<string> majorReleaseSections = [];
+        string blogsSection = string.Empty;
+        string videosSection = string.Empty;
+        string welcomeSection = string.Empty;
         string content = string.Empty;
         string title = defaultTitle;
 
+        // Phase 1: Generate all body sections in parallel
         await AnsiConsole.Progress().AutoClear(false).HideCompleted(false).StartAsync(async ctx =>
         {
-            const string sectionLabel = "Generate newsletter content";
-            const string titleLabel = "Generate title";
+            const string copilotLabel = "Copilot CLI & SDK section";
+            const string vscodeLabel = "VS Code section";
+            const string vsLabel = "Visual Studio section";
+            const string blogsLabel = "Developer Blogs section";
+            const string videosLabel = "Developer Videos section";
 
-            var sectionTask = AddInactiveTask(ctx, sectionLabel);
+            var copilotTask = AddInactiveTask(ctx, copilotLabel);
+            var vscodeTask = AddInactiveTask(ctx, vscodeLabel);
+            var vsTask = AddInactiveTask(ctx, vsLabel);
+            var blogsTask = AddInactiveTask(ctx, blogsLabel);
+            var videosTask = AddInactiveTask(ctx, videosLabel);
+
+            var majorTasks = majorReleases.Select(entry =>
+                (Entry: entry, ProgressTask: AddInactiveTask(ctx, $"Major: {entry.Version}"))).ToList();
+
+            var copilotWork = RunTrackedTaskAsync(copilotTask, copilotLabel,
+                () => newsletterService.GenerateDevTechCopilotSectionAsync(
+                    cliReleases, sdkReleases, changelogEntries,
+                    weekStart, weekEnd, cache, selectedModel),
+                metrics, "Generate: Copilot section");
+
+            var vscodeWork = RunTrackedTaskAsync(vscodeTask, vscodeLabel,
+                () => newsletterService.GenerateDevTechVSCodeSectionAsync(
+                    vscodeReleaseNotes, vscodeBlogEntries,
+                    weekStart, weekEnd, cache, selectedModel),
+                metrics, "Generate: VS Code section");
+
+            var vsWork = RunTrackedTaskAsync(vsTask, vsLabel,
+                () => newsletterService.GenerateDevTechVisualStudioSectionAsync(
+                    vsBlogEntries, FeedUrls.VSReleaseNotes, FeedUrls.VSInsidersReleaseNotes,
+                    weekStart, weekEnd, cache, selectedModel),
+                metrics, "Generate: Visual Studio section");
+
+            var majorReleaseWork = majorTasks.Select(mrt =>
+                RunTrackedTaskAsync(mrt.ProgressTask, $"Major: {mrt.Entry.Version}",
+                    () => newsletterService.GenerateDevTechMajorReleaseSectionAsync(
+                        mrt.Entry, weekStart, weekEnd, cache, selectedModel),
+                    metrics, $"Generate: Major release ({mrt.Entry.Version})")).ToList();
+
+            var blogsWork = RunTrackedTaskAsync(blogsTask, blogsLabel,
+                () => newsletterService.GenerateDevTechBlogsSectionAsync(
+                    blogPool, majorReleaseTitles, weekStart, weekEnd, cache, selectedModel),
+                metrics, "Generate: Developer Blogs section");
+
+            var videosWork = RunTrackedTaskAsync(videosTask, videosLabel,
+                () => newsletterService.GenerateDevTechVideosSectionAsync(
+                    youtubeDotNetEntries, youtubeVSEntries, youtubeVSCodeEntries,
+                    youtubeGitHubEntries, youtubeMicrosoftDevEntries,
+                    weekStart, weekEnd, cache, selectedModel),
+                metrics, "Generate: Developer Videos section");
+
+            await Task.WhenAll(
+                copilotWork, vscodeWork, vsWork,
+                Task.WhenAll(majorReleaseWork),
+                blogsWork, videosWork);
+
+            copilotSection = await copilotWork;
+            vscodeSection = await vscodeWork;
+            vsSection = await vsWork;
+            foreach (var work in majorReleaseWork)
+                majorReleaseSections.Add(await work);
+            blogsSection = await blogsWork;
+            videosSection = await videosWork;
+        });
+
+        // Phase 2: Generate Welcome (needs all sections) and Title
+        List<string> allSections = [copilotSection, vscodeSection, vsSection];
+        allSections.AddRange(majorReleaseSections);
+        allSections.AddRange([blogsSection, videosSection]);
+
+        await AnsiConsole.Progress().AutoClear(false).HideCompleted(false).StartAsync(async ctx =>
+        {
+            const string welcomeLabel = "Welcome section";
+            const string titleLabel = "Newsletter title";
+
+            var welcomeTask = AddInactiveTask(ctx, welcomeLabel);
             var titleTask = AddInactiveTask(ctx, titleLabel);
 
-            content = await RunTrackedTaskAsync(
-                sectionTask,
-                sectionLabel,
-                () => newsletterService.GenerateDevTechNewsletterAsync(
-                    cliReleases, sdkReleases, changelogEntries,
-                    vscodeBlogEntries, vscodeReleaseNotes,
-                    dotNetBlogEntries, devBlogEntries,
-                    vsBlogEntries, azureBlogEntries, aspireBlogEntries,
-                    typeScriptBlogEntries,
-                    githubBlogEntries, youtubeDotNetEntries,
-                    FeedUrls.VSReleaseNotes, FeedUrls.VSInsidersReleaseNotes,
-                    weekStart, weekEnd, cache, selectedModel),
-                metrics,
-                "Generate: DevTech newsletter");
+            welcomeSection = await RunTrackedTaskAsync(welcomeTask, welcomeLabel,
+                () => newsletterService.GenerateDevTechWelcomeAsync(
+                    allSections, weekStart, weekEnd, cache, selectedModel),
+                metrics, "Generate: DevTech Welcome");
 
-            var welcomeSummary = ExtractWelcomeSummary(content);
+            var welcomeSummary = ExtractWelcomeSummary(welcomeSection);
             var newsletterLabel = GetNewsletterLabel(NewsletterType.DevTechMVP);
-            title = await RunTrackedTaskAsync(
-                titleTask,
-                titleLabel,
+            title = await RunTrackedTaskAsync(titleTask, titleLabel,
                 () => newsletterService.GenerateNewsletterTitleAsync(
-                    welcomeSummary,
-                    newsletterLabel,
-                    cache,
-                    selectedModel),
-                metrics,
-                "Generate: Newsletter title");
+                    welcomeSummary, newsletterLabel, cache, selectedModel),
+                metrics, "Generate: Newsletter title");
         });
+
+        // Assemble final content
+        var contentBuilder = new StringBuilder();
+        contentBuilder.AppendLine(welcomeSection);
+        contentBuilder.AppendLine();
+
+        foreach (var section in new[] { copilotSection, vscodeSection, vsSection })
+        {
+            if (!string.IsNullOrWhiteSpace(section))
+            {
+                contentBuilder.AppendLine(section);
+                contentBuilder.AppendLine();
+            }
+        }
+        foreach (var section in majorReleaseSections.Where(s => !string.IsNullOrWhiteSpace(s)))
+        {
+            contentBuilder.AppendLine(section);
+            contentBuilder.AppendLine();
+        }
+        foreach (var section in new[] { blogsSection, videosSection })
+        {
+            if (!string.IsNullOrWhiteSpace(section))
+            {
+                contentBuilder.AppendLine(section);
+                contentBuilder.AppendLine();
+            }
+        }
+
+        content = contentBuilder.ToString().Trim();
 
         if (string.IsNullOrWhiteSpace(content))
         {
