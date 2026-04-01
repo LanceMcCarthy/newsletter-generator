@@ -576,6 +576,256 @@ public class NewsletterService(ILogger<NewsletterService> logger)
         return sb.ToString();
     }
 
+    public async Task<string> GenerateDevTechNewsletterAsync(
+        List<ReleaseEntry> cliReleases,
+        List<ReleaseEntry> sdkReleases,
+        List<ReleaseEntry> changelogEntries,
+        List<ReleaseEntry> vscodeBlogEntries,
+        VSCodeReleaseNotes? vscodeReleaseNotes,
+        List<ReleaseEntry> dotNetBlogEntries,
+        List<ReleaseEntry> devBlogEntries,
+        List<ReleaseEntry> vsBlogEntries,
+        List<ReleaseEntry> azureBlogEntries,
+        List<ReleaseEntry> aspireBlogEntries,
+        List<ReleaseEntry> typeScriptBlogEntries,
+        List<ReleaseEntry> githubBlogEntries,
+        List<ReleaseEntry> youtubeDotNetEntries,
+        string vsReleaseNotesUrl,
+        string vsInsidersReleaseNotesUrl,
+        DateOnly weekStart,
+        DateOnly weekEnd,
+        CacheService cache,
+        string? model = null)
+    {
+        var sourceData = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            cliReleases,
+            sdkReleases,
+            changelogEntries,
+            vscodeBlogEntries,
+            vscodeFeatures = vscodeReleaseNotes?.Features,
+            vscodeVersionUrl = vscodeReleaseNotes?.WebsiteUrl,
+            dotNetBlogEntries,
+            devBlogEntries,
+            vsBlogEntries,
+            azureBlogEntries,
+            aspireBlogEntries,
+            typeScriptBlogEntries,
+            githubBlogEntries,
+            youtubeDotNetEntries,
+            model
+        });
+
+        var sourceHash = CacheService.GetContentHash(sourceData);
+        var cached = await cache.TryGetCachedAsync("devtech-newsletter", sourceHash);
+        if (cached != null)
+        {
+            AnsiConsole.MarkupLine("[dim]Using cached DevTech MVP newsletter[/]");
+            return cached;
+        }
+
+        AnsiConsole.MarkupLine("[grey]Generating DevTech MVP newsletter...[/]");
+        await using var copilot = await CreateStartedSessionAsync(
+            model,
+            """
+                    You are a technical newsletter editor writing for Developer Technologies (DevTech) MVPs.
+                    Your audience is experienced developers and MVPs who follow Microsoft developer tools closely.
+                    
+                    Your job is to produce a concise, skimmable weekly digest that covers:
+                    - GitHub Copilot CLI & SDK highlights
+                    - VS Code updates
+                    - Visual Studio release highlights
+                    - Key posts from Microsoft developer blogs (.NET, Visual Studio, Azure, Aspire, TypeScript)
+
+                    TONE GUIDELINES:
+                    - Direct, developer-to-developer
+                    - No marketing fluff or hyperbole
+                    - Factual and concise - every word earns its place
+                    - Readers are busy MVPs who want to skim and click through for details
+                    
+                    STRUCTURE:
+                    The newsletter has clearly labeled sections with short bullet summaries.
+                    Every bullet MUST link to the source for readers who want more detail.
+                    
+                    OUTPUT REQUIREMENTS:
+                    - Output ONLY the final newsletter Markdown
+                    - No preamble, no meta-commentary, no code fences
+                    - Use the exact structure specified in the prompt
+                    """);
+
+        var prompt = BuildDevTechPrompt(
+            cliReleases, sdkReleases, changelogEntries,
+            vscodeBlogEntries, vscodeReleaseNotes,
+            dotNetBlogEntries, devBlogEntries,
+            vsBlogEntries, azureBlogEntries, aspireBlogEntries,
+            typeScriptBlogEntries, githubBlogEntries, youtubeDotNetEntries,
+            vsReleaseNotesUrl, vsInsidersReleaseNotesUrl,
+            weekStart, weekEnd);
+
+        var result = await SendPromptAsync(copilot.Session, prompt);
+        await cache.SaveCacheAsync("devtech-newsletter", result, sourceHash);
+        return result;
+    }
+
+    private static string BuildDevTechPrompt(
+        List<ReleaseEntry> cliReleases,
+        List<ReleaseEntry> sdkReleases,
+        List<ReleaseEntry> changelogEntries,
+        List<ReleaseEntry> vscodeBlogEntries,
+        VSCodeReleaseNotes? vscodeReleaseNotes,
+        List<ReleaseEntry> dotNetBlogEntries,
+        List<ReleaseEntry> devBlogEntries,
+        List<ReleaseEntry> vsBlogEntries,
+        List<ReleaseEntry> azureBlogEntries,
+        List<ReleaseEntry> aspireBlogEntries,
+        List<ReleaseEntry> typeScriptBlogEntries,
+        List<ReleaseEntry> githubBlogEntries,
+        List<ReleaseEntry> youtubeDotNetEntries,
+        string vsReleaseNotesUrl,
+        string vsInsidersReleaseNotesUrl,
+        DateOnly weekStart,
+        DateOnly weekEnd)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine($"""
+            Generate a weekly DevTech MVP newsletter covering {weekStart:MMMM d} to {weekEnd:MMMM d, yyyy}.
+
+            This newsletter goes to Developer Technologies MVPs. Be very concise and skimmable.
+            Every item MUST include a markdown link to its source URL.
+            
+            Use EXACTLY this structure:
+
+            Welcome
+            --------
+
+            Write 1-2 short paragraphs summarizing the period's most important updates.
+            An MVP should be able to read just this section and know what matters.
+            Mention specific product names and version numbers (e.g., TypeScript 6.0, Aspire 13.2).
+            Cover highlights across all sections: Copilot CLI/SDK, VS Code, Visual Studio, and developer blogs.
+            IMPORTANT: Link the most important items inline. For example:
+            "[TypeScript 6.0](https://devblogs.microsoft.com/typescript/...) ships with ..."
+            "[VS Code Insiders](https://code.visualstudio.com/updates/...) adds ..."
+            Use the actual URLs from the source material provided below.
+
+            After the paragraphs, add 4-8 emoji bullet highlights. IMPORTANT: link each bold label.
+            Example format (use real URLs from source material):
+            - 🚀 **[TypeScript 6.0 released](https://devblogs.microsoft.com/typescript/...)** - ships with isolated declarations and faster builds
+            - 🔧 **[Copilot CLI v1.2](https://github.com/github/copilot-cli/releases)** - adds streaming output and MCP tool support
+            - 📦 **[Aspire 13.2](https://devblogs.microsoft.com/aspire/...)** - new dashboard telemetry and health checks
+
+            Include any notable product releases from the Developer Blogs.
+            Every emoji bullet MUST have its bold label wrapped in a markdown link.
+
+            * * * * *
+
+            ---
+            ## Copilot CLI & SDK
+
+            <3-5 bullets covering the most important CLI/SDK releases and Copilot changelog items.
+             Skip if nothing notable. Each bullet: - **Short label** - description. [Read more](url)>
+
+            ---
+            ## VS Code
+
+            <3-5 bullets covering VS Code Insiders feature highlights and blog posts.
+             Prefer feature bullets from the release notes when available.
+             Each bullet links to the release notes page or blog post.{(vscodeReleaseNotes is not null ? $"\n         Release notes: [VS Code Insiders]({vscodeReleaseNotes.WebsiteUrl})" : "")}>
+
+            ---
+            ## Visual Studio
+
+            <3-5 bullets from the Visual Studio blog feed covering release highlights.
+             Include links to release notes pages when relevant.
+             Reference links:
+             - [Visual Studio 2026 Release Notes]({vsReleaseNotesUrl})
+             - [Visual Studio 2026 Insiders Release Notes]({vsInsidersReleaseNotesUrl})>
+
+            ---
+
+            MAJOR RELEASE SECTIONS (conditional - only if a major release exists):
+            If any blog post in the source material announces a major product release
+            (e.g., TypeScript 6.0, Aspire 13.2, .NET 10 RC, EF Core 10, etc.),
+            give it a dedicated section BEFORE Developer Blogs. Use the product name as the heading.
+            Structure for each major release section:
+
+            ---
+            ## [Product Name] [Version]
+
+            One sentence summarizing what this release is and why it matters.
+            [Read the full announcement](url-to-blog-post)
+
+            - **Feature 1** - description
+            - **Feature 2** - description
+            - **Feature 3** - description
+
+            You can create multiple major release sections if there are multiple major releases.
+            Only do this for truly significant version releases, not minor updates or blog posts.
+            Indicators of a major release: version number in the title (e.g., "Announcing TypeScript 6.0"),
+            words like "release", "GA", "generally available", "ships", "launches".
+
+            ---
+            ## Developer Blogs
+
+            Curate the most interesting 5-8 posts across .NET, Azure, Aspire, TypeScript, GitHub Blog, and developer.microsoft.com blogs.
+            EXCLUDE any posts already covered in a major release section above.
+            Group by topic area. Each bullet: - **Title** - one sentence summary. [Read more](url)
+            Be highly selective - only include posts that would interest an MVP audience.
+
+            ---
+            ## Community Videos
+
+            <3-5 bullets highlighting the most interesting recent videos from the .NET YouTube channel.
+             Each bullet: - **[Video title](youtube-url)** - one sentence describing the topic.
+             Focus on videos relevant to MVPs: community standups, live coding, new features, AI + .NET.
+             Skip if no videos available.>
+
+            ---
+
+            RULES:
+            - Every section must start with at least one summary sentence before any bullets
+            - Maximum ~25 bullets total across all sections (not counting Welcome emoji bullets)
+            - Skip any section that has zero relevant content (omit the heading entirely)
+            - Every bullet in the body sections must link to its source
+            - No emoji in body section bullets (emoji are ONLY used in the Welcome highlight bullets)
+            - Bold the lead label in each bullet
+            - Keep descriptions to one sentence each
+            - Combine related items rather than listing separately
+            - The Welcome section emoji bullets MUST have linked bold labels like **[Label](url)**
+
+            Source material follows. URLs are in the markdown headers - use them for links.
+
+            """);
+
+        AppendReleases(sb, "GitHub Copilot CLI releases", cliReleases);
+        AppendReleases(sb, "GitHub Copilot SDK releases", sdkReleases);
+        AppendBlogEntries(sb, "GitHub Copilot Changelog", changelogEntries);
+
+        // VS Code Insiders release note features
+        if (vscodeReleaseNotes is { Features.Count: > 0 })
+        {
+            sb.AppendLine($"## VS Code Insiders Release Notes ({vscodeReleaseNotes.WebsiteUrl})");
+            sb.AppendLine();
+            foreach (var feature in vscodeReleaseNotes.Features)
+            {
+                sb.AppendLine($"- [{feature.Category}] {feature.Description}{(string.IsNullOrWhiteSpace(feature.Link) ? "" : $" ({feature.Link})")}");
+            }
+            sb.AppendLine();
+        }
+
+        AppendBlogEntries(sb, "VS Code Blog", vscodeBlogEntries);
+        AppendBlogEntries(sb, ".NET Blog", dotNetBlogEntries);
+        AppendBlogEntries(sb, "Developer Blog (developer.microsoft.com)", devBlogEntries);
+        AppendBlogEntries(sb, "Visual Studio Blog", vsBlogEntries);
+        AppendBlogEntries(sb, "All Things Azure Blog", azureBlogEntries);
+        AppendBlogEntries(sb, "Aspire Blog", aspireBlogEntries);
+        AppendBlogEntries(sb, "TypeScript Blog", typeScriptBlogEntries);
+        AppendBlogEntries(sb, "GitHub Blog", githubBlogEntries);
+        AppendBlogEntries(sb, "YouTube .NET Channel Videos", youtubeDotNetEntries);
+
+        return sb.ToString();
+    }
+
     private async Task<string> SendPromptAsync(CopilotSession session, string prompt)
     {
         logger.LogDebug("SendPromptAsync: sending prompt ({Length} chars)", prompt.Length);

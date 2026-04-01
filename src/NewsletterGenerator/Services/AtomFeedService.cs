@@ -7,9 +7,10 @@ using NewsletterGenerator.Models;
 
 namespace NewsletterGenerator.Services;
 
-public partial class AtomFeedService(ILogger<AtomFeedService> logger, HttpClient? httpClient = null)
+public partial class AtomFeedService(ILogger<AtomFeedService> logger, HttpClient? httpClient = null, CacheService? feedCache = null)
 {
     private readonly HttpClient _http = httpClient ?? new HttpClient();
+    private static readonly TimeSpan FeedCacheMaxAge = TimeSpan.FromHours(1);
 
     /// <summary>
     /// Fetches any Atom or RSS 2.0 feed and returns entries within the specified date range.
@@ -23,7 +24,8 @@ public partial class AtomFeedService(ILogger<AtomFeedService> logger, HttpClient
         DateOnly endDate,
         IEnumerable<string>? categoryKeywords = null,
         bool preferShortSummary = false,
-        int maxContentChars = 0)
+        int maxContentChars = 0,
+        CancellationToken cancellationToken = default)
     {
         var result = await FetchFeedWithMetricsAsync(
             feedUrl,
@@ -31,7 +33,8 @@ public partial class AtomFeedService(ILogger<AtomFeedService> logger, HttpClient
             endDate,
             categoryKeywords,
             preferShortSummary,
-            maxContentChars);
+            maxContentChars,
+            cancellationToken);
 
         return result.Entries;
     }
@@ -42,19 +45,62 @@ public partial class AtomFeedService(ILogger<AtomFeedService> logger, HttpClient
         DateOnly endDate,
         IEnumerable<string>? categoryKeywords = null,
         bool preferShortSummary = false,
-        int maxContentChars = 0)
+        int maxContentChars = 0,
+        CancellationToken cancellationToken = default)
     {
         ServiceLogMessages.FetchingFeed(logger, feedUrl, startDate, endDate);
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("NewsletterGenerator/1.0");
-        var xml = await _http.GetStringAsync(feedUrl);
-        ServiceLogMessages.FeedResponseLength(logger, xml.Length);
 
-        using var stringReader = new StringReader(xml);
-        using var xmlReader = XmlReader.Create(stringReader, new XmlReaderSettings
+        string xml;
+        try
         {
-            IgnoreComments = true
-        });
-        var feed = SyndicationFeed.Load(xmlReader);
+            // Try feed cache first
+            var cached = feedCache is not null
+                ? await feedCache.TryGetFeedCacheAsync(feedUrl, FeedCacheMaxAge)
+                : null;
+
+            if (cached is not null)
+            {
+                xml = cached;
+            }
+            else
+            {
+                xml = await _http.GetStringAsync(feedUrl, cancellationToken);
+                ServiceLogMessages.FeedResponseLength(logger, xml.Length);
+
+                // Save to feed cache
+                if (feedCache is not null)
+                    await feedCache.SaveFeedCacheAsync(feedUrl, xml);
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning(ex, "Feed fetch failed for {Url}: {Message}", feedUrl, ex.Message);
+            return new FeedFetchResult([], 0, 0, 0, 0, 0);
+        }
+        catch (TaskCanceledException ex)
+        {
+            logger.LogWarning(ex, "Feed fetch timed out for {Url}", feedUrl);
+            return new FeedFetchResult([], 0, 0, 0, 0, 0);
+        }
+
+        SyndicationFeed feed;
+        try
+        {
+            using var stringReader = new StringReader(xml);
+            using var xmlReader = XmlReader.Create(stringReader, new XmlReaderSettings
+            {
+                IgnoreComments = true,
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null
+            });
+            feed = SyndicationFeed.Load(xmlReader);
+        }
+        catch (XmlException ex)
+        {
+            logger.LogWarning(ex, "Feed XML parse failed for {Url}: {Message}", feedUrl, ex.Message);
+            return new FeedFetchResult([], 0, 0, 0, 0, 0);
+        }
 
         var keywords = categoryKeywords?
             .Select(k => k.ToLowerInvariant())

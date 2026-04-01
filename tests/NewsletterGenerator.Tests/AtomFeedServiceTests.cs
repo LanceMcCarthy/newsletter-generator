@@ -179,7 +179,8 @@ public class AtomFeedServiceTests
             new DateOnly(2026, 2, 26),
             new DateOnly(2026, 3, 4),
             preferShortSummary: true,
-            maxContentChars: 1000);
+            maxContentChars: 1000,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         var entry = Assert.Single(result.Entries);
         Assert.Equal(new DateOnly(2026, 3, 4), entry.PublishedAt);
@@ -213,7 +214,8 @@ public class AtomFeedServiceTests
             new DateOnly(2026, 3, 18),
             new DateOnly(2026, 3, 20),
             preferShortSummary: true,
-            maxContentChars: 1000);
+            maxContentChars: 1000,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         var entry = Assert.Single(result.Entries);
         Assert.Equal("March 19, 2026", entry.Version);

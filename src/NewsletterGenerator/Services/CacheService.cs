@@ -150,6 +150,114 @@ public class CacheService(ILogger<CacheService> logger, string? cacheDirectory =
         public string SourceHash { get; init; } = "";
         public DateTimeOffset Timestamp { get; init; }
     }
+
+    /// <summary>
+    /// Tries to get cached raw feed content if it was fetched within the TTL window.
+    /// </summary>
+    public async Task<string?> TryGetFeedCacheAsync(string feedUrl, TimeSpan maxAge)
+    {
+        if (_forceRefresh)
+        {
+            Interlocked.Increment(ref _cacheSkips);
+            var skipKey = FeedCacheKey(feedUrl);
+            RecordReadOutcome(skipKey, "skip");
+            ServiceLogMessages.CacheSkipForceRefresh(logger, skipKey);
+            return null;
+        }
+
+        EnsureCacheDirectory();
+        var cacheKey = FeedCacheKey(feedUrl);
+        var cacheFile = Path.Combine(_cacheDir, $"{cacheKey}.json");
+
+        if (!File.Exists(cacheFile))
+        {
+            Interlocked.Increment(ref _cacheMisses);
+            RecordReadOutcome(cacheKey, "miss");
+            ServiceLogMessages.CacheMissNoFile(logger, cacheKey);
+            return null;
+        }
+
+        try
+        {
+            var json = await File.ReadAllTextAsync(cacheFile);
+            var cached = JsonSerializer.Deserialize<CachedItem>(json);
+
+            if (cached is null)
+            {
+                Interlocked.Increment(ref _cacheMisses);
+                RecordReadOutcome(cacheKey, "miss");
+                return null;
+            }
+
+            var age = DateTimeOffset.UtcNow - cached.Timestamp;
+            if (age > maxAge)
+            {
+                Interlocked.Increment(ref _cacheMisses);
+                RecordReadOutcome(cacheKey, "expired");
+                logger.LogDebug("Feed cache expired for {CacheKey} (age={AgeMinutes:F0}m, max={MaxMinutes:F0}m)",
+                    cacheKey, age.TotalMinutes, maxAge.TotalMinutes);
+                return null;
+            }
+
+            Interlocked.Increment(ref _cacheHits);
+            RecordReadOutcome(cacheKey, "hit", cached.Content.Length);
+            ServiceLogMessages.CacheHit(logger, cacheKey, $"age={age.TotalMinutes:F0}m", cached.Content.Length);
+            return cached.Content;
+        }
+        catch (Exception ex)
+        {
+            Interlocked.Increment(ref _cacheMisses);
+            RecordReadOutcome(cacheKey, "error");
+            ServiceLogMessages.CacheReadFailed(logger, ex, cacheKey);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Saves raw feed content to cache with a timestamp for TTL-based expiry.
+    /// </summary>
+    public async Task SaveFeedCacheAsync(string feedUrl, string content)
+    {
+        var cacheKey = FeedCacheKey(feedUrl);
+
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            RecordSaveOutcome(cacheKey, "empty");
+            ServiceLogMessages.CacheSaveSkippedEmpty(logger, cacheKey);
+            return;
+        }
+
+        logger.LogDebug("Saving feed cache: {CacheKey} ({Length} chars)", cacheKey, content.Length);
+
+        EnsureCacheDirectory();
+        var cacheFile = Path.Combine(_cacheDir, $"{cacheKey}.json");
+
+        var cached = new CachedItem
+        {
+            Content = content,
+            SourceHash = feedUrl,
+            Timestamp = DateTimeOffset.UtcNow
+        };
+
+        var json = JsonSerializer.Serialize(cached, new JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
+
+        await File.WriteAllTextAsync(cacheFile, json);
+        RecordSaveOutcome(cacheKey, "saved", content.Length);
+    }
+
+    private static string FeedCacheKey(string feedUrl)
+    {
+        // Produce a stable, filesystem-safe key from the URL
+        var hash = GetContentHash(feedUrl);
+        var host = new Uri(feedUrl).Host.Replace(".", "-");
+        var path = new Uri(feedUrl).AbsolutePath.Trim('/').Replace('/', '-');
+        if (path.Length > 40) path = path[..40];
+        return $"feed-{host}-{path}-{hash[..12]}";
+    }
 }
 
 public sealed record CacheSectionMetric(
