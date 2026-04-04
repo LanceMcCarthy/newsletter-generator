@@ -1,6 +1,6 @@
 using System.Diagnostics;
+using System.Text;
 using GitHub.Copilot.SDK;
-using Lolcat;
 using Microsoft.Extensions.Logging;
 using NewsletterGenerator.Models;
 using NewsletterGenerator.Services;
@@ -12,11 +12,6 @@ internal static partial class NewsletterApp
 {
     private static readonly FigletFont HeaderFont = FigletFont.Load(
         Path.Combine(AppContext.BaseDirectory, "Assets", "ansi-shadow.flf"));
-    private static readonly Rainbow HeaderRainbow = Rainbow.WithStyle(new RainbowStyle(
-        EscapeSequence: EscapeSequence.Spectre,
-        Spread: 7,
-        Frequency: 0.35,
-        Seed: 42));
 
     public static async Task<int> RunGenerateAsync(GenerateSettings settings)
     {

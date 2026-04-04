@@ -1,3 +1,4 @@
+using System.Text;
 using NewsletterGenerator.Models;
 using NewsletterGenerator.Services;
 using Spectre.Console;
@@ -25,7 +26,7 @@ internal static partial class NewsletterApp
 
         bannerConsole.Write(banner);
 
-        HeaderRainbow.WriteLineWithMarkup(bannerWriter.ToString().TrimEnd());
+        WriteRainbow(bannerWriter.ToString().TrimEnd());
 
         AnsiConsole.Write(new Rule("[yellow]🤖[/] [cornflowerblue]GitHub Copilot CLI & SDK Weekly Generator[/] [yellow]📰[/]")
             .LeftJustified());
@@ -460,4 +461,36 @@ internal static partial class NewsletterApp
             .Replace("`", string.Empty, StringComparison.Ordinal)
             .Trim();
     }
+
+    private static void WriteRainbow(string text, double frequency = 0.35, int spread = 7, int seed = 42)
+    {
+        var sb = new StringBuilder();
+        var lines = text.ReplaceLineEndings("\n").Split('\n');
+
+        for (int lineNum = 0; lineNum < lines.Length; lineNum++)
+        {
+            int charIdx = 0;
+            foreach (char c in lines[lineNum])
+            {
+                if (char.IsWhiteSpace(c))
+                {
+                    sb.Append(c);
+                }
+                else
+                {
+                    double phase = frequency * (seed + (double)lineNum / spread + (double)charIdx / spread);
+                    byte r = (byte)(Math.Sin(phase) * 127 + 128);
+                    byte g = (byte)(Math.Sin(phase + 2 * Math.PI / 3) * 127 + 128);
+                    byte b = (byte)(Math.Sin(phase + 4 * Math.PI / 3) * 127 + 128);
+                    sb.Append($"[rgb({r},{g},{b})]{Markup.Escape(c.ToString())}[/]");
+                }
+                charIdx++;
+            }
+            if (lineNum < lines.Length - 1)
+                sb.Append('\n');
+        }
+
+        AnsiConsole.MarkupLine(sb.ToString());
+    }
+
 }
