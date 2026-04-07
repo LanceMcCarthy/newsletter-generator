@@ -12,33 +12,6 @@ public partial class AtomFeedService(ILogger<AtomFeedService> logger, HttpClient
     private readonly HttpClient _http = httpClient ?? new HttpClient();
     private static readonly TimeSpan FeedCacheMaxAge = TimeSpan.FromHours(1);
 
-    /// <summary>
-    /// Fetches any Atom or RSS 2.0 feed and returns entries within the specified date range.
-    /// Optionally filters by category keyword match (case-insensitive substring).
-    /// For large blog post feeds, set <paramref name="preferShortSummary"/> = true to use the
-    /// short description rather than the full article body.
-    /// </summary>
-    public async Task<List<ReleaseEntry>> FetchFeedAsync(
-        string feedUrl,
-        DateOnly startDate,
-        DateOnly endDate,
-        IEnumerable<string>? categoryKeywords = null,
-        bool preferShortSummary = false,
-        int maxContentChars = 0,
-        CancellationToken cancellationToken = default)
-    {
-        var result = await FetchFeedWithMetricsAsync(
-            feedUrl,
-            startDate,
-            endDate,
-            categoryKeywords,
-            preferShortSummary,
-            maxContentChars,
-            cancellationToken);
-
-        return result.Entries;
-    }
-
     public async Task<FeedFetchResult> FetchFeedWithMetricsAsync(
         string feedUrl,
         DateOnly startDate,

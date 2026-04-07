@@ -302,28 +302,11 @@ internal static partial class NewsletterApp
             blogEntries = blogFetchResult.Entries;
         });
 
-        var cliPreCount = cliReleases.Count;
-        var sdkPreCount = sdkReleases.Count;
-        var cliConsolidation = AtomFeedService.ConsolidatePrereleasesWithMetrics(cliReleases);
-        var sdkConsolidation = AtomFeedService.ConsolidatePrereleasesWithMetrics(sdkReleases);
-        cliReleases = cliConsolidation.Releases;
-        sdkReleases = sdkConsolidation.Releases;
+        (cliReleases, var cliConsolidation) = ConsolidateAndTrack("Copilot CLI releases", cliReleases, cliFetchResult, metrics);
+        (sdkReleases, var sdkConsolidation) = ConsolidateAndTrack("Copilot SDK releases", sdkReleases, sdkFetchResult, metrics);
 
-        metrics.PrereleaseCounts.Add(new PrereleaseCount(
-            "Copilot CLI releases",
-            cliFetchResult?.MatchedItems ?? 0,
-            cliReleases.Select(r => r.Version).ToList(),
-            cliConsolidation.RolledUpPrereleases,
-            cliConsolidation.SkippedPrereleases));
-        metrics.PrereleaseCounts.Add(new PrereleaseCount(
-            "Copilot SDK releases",
-            sdkFetchResult?.MatchedItems ?? 0,
-            sdkReleases.Select(r => r.Version).ToList(),
-            sdkConsolidation.RolledUpPrereleases,
-            sdkConsolidation.SkippedPrereleases));
-
-        log.LogInformation("ConsolidatePrereleases: CLI {Before}->{After}, SDK {SdkBefore}->{SdkAfter}",
-            cliPreCount, cliReleases.Count, sdkPreCount, sdkReleases.Count);
+        log.LogInformation("ConsolidatePrereleases: CLI -> {CliAfter}, SDK -> {SdkAfter}",
+            cliReleases.Count, sdkReleases.Count);
 
         metrics.SourceCounts.Add(new SourceCount(
             "Copilot CLI releases",
@@ -350,15 +333,6 @@ internal static partial class NewsletterApp
             blogEntries.Count.ToString(),
             "Filtered by category"));
 
-        static string CountCell(int n) => n == 0 ? "[dim]0[/]" : $"[green]{n}[/]";
-        static string ItemsCell(IEnumerable<ReleaseEntry> entries, int max = 3)
-        {
-            var titles = entries.Take(max)
-                .Select(e => $"[white]{Markup.Escape(e.Version.Length > 40 ? e.Version[..40] + "..." : e.Version)}[/]");
-            var list = string.Join(", ", titles);
-            return list.Length == 0 ? "[dim]none[/]" : list;
-        }
-
         var table = new Table()
             .Border(TableBorder.Rounded)
             .BorderColor(Color.Grey)
@@ -366,10 +340,10 @@ internal static partial class NewsletterApp
             .AddColumn(new TableColumn("[bold]Items[/]").Centered())
             .AddColumn(new TableColumn("[bold]Recent entries[/]").LeftAligned());
 
-        table.AddRow("[cornflowerblue]Copilot CLI releases[/]", CountCell(cliReleases.Count), ItemsCell(cliReleases));
-        table.AddRow("[cornflowerblue]Copilot SDK releases[/]", CountCell(sdkReleases.Count), ItemsCell(sdkReleases));
-        table.AddRow("[cornflowerblue]Changelog (Copilot)[/]", CountCell(changelogEntries.Count), ItemsCell(changelogEntries));
-        table.AddRow("[cornflowerblue]Blog (Copilot/CLI)[/]", CountCell(blogEntries.Count), ItemsCell(blogEntries));
+        table.AddRow("[cornflowerblue]Copilot CLI releases[/]", FormatCountCell(cliReleases.Count), FormatItemsCell(cliReleases));
+        table.AddRow("[cornflowerblue]Copilot SDK releases[/]", FormatCountCell(sdkReleases.Count), FormatItemsCell(sdkReleases));
+        table.AddRow("[cornflowerblue]Changelog (Copilot)[/]", FormatCountCell(changelogEntries.Count), FormatItemsCell(changelogEntries));
+        table.AddRow("[cornflowerblue]Blog (Copilot/CLI)[/]", FormatCountCell(blogEntries.Count), FormatItemsCell(blogEntries));
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
@@ -534,215 +508,105 @@ internal static partial class NewsletterApp
         var vscodeService = new VSCodeReleaseNotesService();
         var log = loggerFactory.CreateLogger("DevTechNewsletter");
 
-        VSCodeReleaseNotes? vscodeReleaseNotes = null;
-        List<ReleaseEntry> cliReleases = [];
-        List<ReleaseEntry> sdkReleases = [];
-        List<ReleaseEntry> changelogEntries = [];
-        List<ReleaseEntry> vscodeBlogEntries = [];
-        List<ReleaseEntry> dotNetBlogEntries = [];
-        List<ReleaseEntry> devBlogEntries = [];
-        List<ReleaseEntry> vsBlogEntries = [];
-        List<ReleaseEntry> azureBlogEntries = [];
-        List<ReleaseEntry> aspireBlogEntries = [];
-        List<ReleaseEntry> typeScriptBlogEntries = [];
-        List<ReleaseEntry> githubBlogEntries = [];
-        List<ReleaseEntry> youtubeDotNetEntries = [];
-        List<ReleaseEntry> youtubeVSEntries = [];
-        List<ReleaseEntry> youtubeVSCodeEntries = [];
-        List<ReleaseEntry> youtubeGitHubEntries = [];
-        List<ReleaseEntry> youtubeMicrosoftDevEntries = [];
+        // Define all feed sources as descriptors
+        var feedDescriptors = new (string Key, string Label, string Url, bool PreferShortSummary, int MaxContentChars, string Notes)[]
+        {
+            ("cli",         "Copilot CLI releases",  FeedUrls.CliAtom,              false, 0,    "Releases"),
+            ("sdk",         "Copilot SDK releases",  FeedUrls.SdkAtom,              false, 0,    "Releases"),
+            ("changelog",   "Copilot changelog",     FeedUrls.ChangelogCopilot,     false, 1500, "Feed items"),
+            ("vscodeBlog",  "VS Code blog",          FeedUrls.VSCodeBlog,           true,  800,  "Blog posts"),
+            ("dotNet",      ".NET blog",             FeedUrls.DotNetBlog,           true,  800,  "Blog posts"),
+            ("devBlog",     "Developer blog",        FeedUrls.DevBlog,              true,  800,  "Blog posts"),
+            ("vsBlog",      "Visual Studio blog",    FeedUrls.VSBlog,               true,  800,  "Blog posts"),
+            ("azure",       "Azure blog",            FeedUrls.AzureBlog,            true,  800,  "Blog posts"),
+            ("aspire",      "Aspire blog",           FeedUrls.AspireBlog,           true,  800,  "Blog posts"),
+            ("typeScript",  "TypeScript blog",       FeedUrls.TypeScriptBlog,       true,  800,  "Blog posts"),
+            ("githubBlog",  "GitHub blog",           FeedUrls.GitHubBlog,           true,  800,  "Blog posts"),
+            ("ytDotNet",    "YouTube .NET",          FeedUrls.YouTubeDotNet,        true,  500,  "Videos"),
+            ("ytVS",        "YouTube Visual Studio", FeedUrls.YouTubeVisualStudio,  true,  500,  "Videos"),
+            ("ytVSCode",    "YouTube VS Code",       FeedUrls.YouTubeVSCode,        true,  500,  "Videos"),
+            ("ytGitHub",    "YouTube GitHub",        FeedUrls.YouTubeGitHub,        true,  500,  "Videos"),
+            ("ytMSDev",     "YouTube Microsoft Dev", FeedUrls.YouTubeMicrosoftDev,  true,  500,  "Videos"),
+        };
 
-        FeedFetchResult? cliFetchResult = null;
-        FeedFetchResult? sdkFetchResult = null;
-        FeedFetchResult? changelogFetchResult = null;
-        FeedFetchResult? vscodeBlogResult = null;
-        FeedFetchResult? dotNetBlogResult = null;
-        FeedFetchResult? devBlogResult = null;
-        FeedFetchResult? vsBlogResult = null;
-        FeedFetchResult? azureBlogResult = null;
-        FeedFetchResult? aspireBlogResult = null;
-        FeedFetchResult? typeScriptBlogResult = null;
-        FeedFetchResult? githubBlogResult = null;
-        FeedFetchResult? youtubeDotNetResult = null;
-        FeedFetchResult? youtubeVSResult = null;
-        FeedFetchResult? youtubeVSCodeResult = null;
-        FeedFetchResult? youtubeGitHubResult = null;
-        FeedFetchResult? youtubeMicrosoftDevResult = null;
+        var feedResults = new Dictionary<string, FeedFetchResult>(StringComparer.OrdinalIgnoreCase);
+        VSCodeReleaseNotes? vscodeReleaseNotes = null;
         VSCodeReleaseNotesFetchResult? vscodeNotesResult = null;
 
         await AnsiConsole.Progress().AutoClear(false).HideCompleted(false).StartAsync(async ctx =>
         {
-            const string cliLabel = "Copilot CLI releases";
-            const string sdkLabel = "Copilot SDK releases";
-            const string changelogLabel = "Copilot changelog";
+            // VS Code release notes (non-feed source)
             const string vscodeNotesLabel = "VS Code release notes";
-            const string vscodeBlogLabel = "VS Code blog";
-            const string dotNetLabel = ".NET blog";
-            const string devBlogLabel = "Developer blog";
-            const string vsBlogLabel = "Visual Studio blog";
-            const string azureLabel = "Azure blog";
-            const string aspireLabel = "Aspire blog";
-            const string tsLabel = "TypeScript blog";
-            const string githubBlogLabel = "GitHub blog";
-            const string youtubeDotNetLabel = "YouTube .NET";
-            const string youtubeVSLabel = "YouTube Visual Studio";
-            const string youtubeVSCodeLabel = "YouTube VS Code";
-            const string youtubeGitHubLabel = "YouTube GitHub";
-            const string youtubeMicrosoftDevLabel = "YouTube Microsoft Dev";
-
-            var cliTask = AddInactiveTask(ctx, cliLabel);
-            var sdkTask = AddInactiveTask(ctx, sdkLabel);
-            var changelogTask = AddInactiveTask(ctx, changelogLabel);
             var vscodeNotesTask = AddInactiveTask(ctx, vscodeNotesLabel);
-            var vscodeBlogTask = AddInactiveTask(ctx, vscodeBlogLabel);
-            var dotNetTask = AddInactiveTask(ctx, dotNetLabel);
-            var devBlogTask = AddInactiveTask(ctx, devBlogLabel);
-            var vsBlogTask = AddInactiveTask(ctx, vsBlogLabel);
-            var azureTask = AddInactiveTask(ctx, azureLabel);
-            var aspireTask = AddInactiveTask(ctx, aspireLabel);
-            var tsTask = AddInactiveTask(ctx, tsLabel);
-            var githubBlogTask = AddInactiveTask(ctx, githubBlogLabel);
-            var youtubeDotNetTask = AddInactiveTask(ctx, youtubeDotNetLabel);
-            var youtubeVSTask = AddInactiveTask(ctx, youtubeVSLabel);
-            var youtubeVSCodeTask = AddInactiveTask(ctx, youtubeVSCodeLabel);
-            var youtubeGitHubTask = AddInactiveTask(ctx, youtubeGitHubLabel);
-            var youtubeMicrosoftDevTask = AddInactiveTask(ctx, youtubeMicrosoftDevLabel);
 
-            // Fetch all feeds - CLI/SDK releases + blog feeds
-            cliFetchResult = await RunTrackedTaskAsync(
-                cliTask, cliLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.CliAtom, weekStart, weekEnd),
-                metrics, "Fetch: Copilot CLI releases");
-            cliReleases = cliFetchResult.Entries;
+            // Create progress tasks for all feeds
+            var feedTasks = feedDescriptors.Select(d => (Descriptor: d, ProgressTask: AddInactiveTask(ctx, d.Label))).ToList();
 
-            sdkFetchResult = await RunTrackedTaskAsync(
-                sdkTask, sdkLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.SdkAtom, weekStart, weekEnd),
-                metrics, "Fetch: Copilot SDK releases");
-            sdkReleases = sdkFetchResult.Entries;
-
-            changelogFetchResult = await RunTrackedTaskAsync(
-                changelogTask, changelogLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.ChangelogCopilot, weekStart, weekEnd, maxContentChars: 1500),
-                metrics, "Fetch: Copilot changelog");
-            changelogEntries = changelogFetchResult.Entries;
-
+            // Fetch VS Code release notes
             vscodeNotesResult = await RunTrackedTaskAsync(
                 vscodeNotesTask, vscodeNotesLabel,
                 () => vscodeService.GetReleaseNotesFetchResultForDateRangeAsync(weekStart, weekEnd),
                 metrics, "Fetch: VS Code release notes");
             vscodeReleaseNotes = vscodeNotesResult.ReleaseNotes;
 
-            vscodeBlogResult = await RunTrackedTaskAsync(
-                vscodeBlogTask, vscodeBlogLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.VSCodeBlog, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 800),
-                metrics, "Fetch: VS Code blog");
-            vscodeBlogEntries = vscodeBlogResult.Entries;
-
-            dotNetBlogResult = await RunTrackedTaskAsync(
-                dotNetTask, dotNetLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.DotNetBlog, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 800),
-                metrics, "Fetch: .NET blog");
-            dotNetBlogEntries = dotNetBlogResult.Entries;
-
-            devBlogResult = await RunTrackedTaskAsync(
-                devBlogTask, devBlogLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.DevBlog, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 800),
-                metrics, "Fetch: Developer blog");
-            devBlogEntries = devBlogResult.Entries;
-
-            vsBlogResult = await RunTrackedTaskAsync(
-                vsBlogTask, vsBlogLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.VSBlog, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 800),
-                metrics, "Fetch: Visual Studio blog");
-            vsBlogEntries = vsBlogResult.Entries;
-
-            azureBlogResult = await RunTrackedTaskAsync(
-                azureTask, azureLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.AzureBlog, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 800),
-                metrics, "Fetch: Azure blog");
-            azureBlogEntries = azureBlogResult.Entries;
-
-            aspireBlogResult = await RunTrackedTaskAsync(
-                aspireTask, aspireLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.AspireBlog, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 800),
-                metrics, "Fetch: Aspire blog");
-            aspireBlogEntries = aspireBlogResult.Entries;
-
-            typeScriptBlogResult = await RunTrackedTaskAsync(
-                tsTask, tsLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.TypeScriptBlog, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 800),
-                metrics, "Fetch: TypeScript blog");
-            typeScriptBlogEntries = typeScriptBlogResult.Entries;
-
-            githubBlogResult = await RunTrackedTaskAsync(
-                githubBlogTask, githubBlogLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.GitHubBlog, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 800),
-                metrics, "Fetch: GitHub blog");
-            githubBlogEntries = githubBlogResult.Entries;
-
-            youtubeDotNetResult = await RunTrackedTaskAsync(
-                youtubeDotNetTask, youtubeDotNetLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.YouTubeDotNet, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 500),
-                metrics, "Fetch: YouTube .NET");
-            youtubeDotNetEntries = youtubeDotNetResult.Entries;
-
-            youtubeVSResult = await RunTrackedTaskAsync(
-                youtubeVSTask, youtubeVSLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.YouTubeVisualStudio, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 500),
-                metrics, "Fetch: YouTube Visual Studio");
-            youtubeVSEntries = youtubeVSResult.Entries;
-
-            youtubeVSCodeResult = await RunTrackedTaskAsync(
-                youtubeVSCodeTask, youtubeVSCodeLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.YouTubeVSCode, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 500),
-                metrics, "Fetch: YouTube VS Code");
-            youtubeVSCodeEntries = youtubeVSCodeResult.Entries;
-
-            youtubeGitHubResult = await RunTrackedTaskAsync(
-                youtubeGitHubTask, youtubeGitHubLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.YouTubeGitHub, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 500),
-                metrics, "Fetch: YouTube GitHub");
-            youtubeGitHubEntries = youtubeGitHubResult.Entries;
-
-            youtubeMicrosoftDevResult = await RunTrackedTaskAsync(
-                youtubeMicrosoftDevTask, youtubeMicrosoftDevLabel,
-                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.YouTubeMicrosoftDev, weekStart, weekEnd, preferShortSummary: true, maxContentChars: 500),
-                metrics, "Fetch: YouTube Microsoft Dev");
-            youtubeMicrosoftDevEntries = youtubeMicrosoftDevResult.Entries;
+            // Fetch all feeds
+            foreach (var (descriptor, progressTask) in feedTasks)
+            {
+                var result = await RunTrackedTaskAsync(
+                    progressTask, descriptor.Label,
+                    () => feedService.FetchFeedWithMetricsAsync(
+                        descriptor.Url, weekStart, weekEnd,
+                        preferShortSummary: descriptor.PreferShortSummary,
+                        maxContentChars: descriptor.MaxContentChars),
+                    metrics, $"Fetch: {descriptor.Label}");
+                feedResults[descriptor.Key] = result;
+            }
         });
 
-        // Consolidate CLI/SDK prereleases
-        var cliConsolidation = AtomFeedService.ConsolidatePrereleasesWithMetrics(cliReleases);
-        var sdkConsolidation = AtomFeedService.ConsolidatePrereleasesWithMetrics(sdkReleases);
-        cliReleases = cliConsolidation.Releases;
-        sdkReleases = sdkConsolidation.Releases;
+        List<ReleaseEntry> Entries(string key) => feedResults.TryGetValue(key, out var r) ? r.Entries : [];
 
-        metrics.SourceCounts.Add(new SourceCount("Copilot CLI", (cliFetchResult?.TotalItems ?? 0).ToString(), (cliFetchResult?.InRangeItems ?? 0).ToString(), cliReleases.Count.ToString(), "Releases"));
-        metrics.SourceCounts.Add(new SourceCount("Copilot SDK", (sdkFetchResult?.TotalItems ?? 0).ToString(), (sdkFetchResult?.InRangeItems ?? 0).ToString(), sdkReleases.Count.ToString(), "Releases"));
-        metrics.SourceCounts.Add(new SourceCount("Copilot Changelog", (changelogFetchResult?.TotalItems ?? 0).ToString(), (changelogFetchResult?.InRangeItems ?? 0).ToString(), changelogEntries.Count.ToString(), "Feed items"));
-        metrics.SourceCounts.Add(new SourceCount("VS Code Insiders", (vscodeNotesResult?.CandidateUrlCount ?? 0).ToString(), (vscodeNotesResult?.MatchedSectionCount ?? 0).ToString(), (vscodeNotesResult?.UniqueFeatureCount ?? 0).ToString(), "Release note features"));
-        metrics.SourceCounts.Add(new SourceCount("VS Code Blog", (vscodeBlogResult?.TotalItems ?? 0).ToString(), (vscodeBlogResult?.InRangeItems ?? 0).ToString(), vscodeBlogEntries.Count.ToString(), "Blog posts"));
-        metrics.SourceCounts.Add(new SourceCount(".NET Blog", (dotNetBlogResult?.TotalItems ?? 0).ToString(), (dotNetBlogResult?.InRangeItems ?? 0).ToString(), dotNetBlogEntries.Count.ToString(), "Blog posts"));
-        metrics.SourceCounts.Add(new SourceCount("Developer Blog", (devBlogResult?.TotalItems ?? 0).ToString(), (devBlogResult?.InRangeItems ?? 0).ToString(), devBlogEntries.Count.ToString(), "Blog posts"));
-        metrics.SourceCounts.Add(new SourceCount("VS Blog", (vsBlogResult?.TotalItems ?? 0).ToString(), (vsBlogResult?.InRangeItems ?? 0).ToString(), vsBlogEntries.Count.ToString(), "Blog posts"));
-        metrics.SourceCounts.Add(new SourceCount("Azure Blog", (azureBlogResult?.TotalItems ?? 0).ToString(), (azureBlogResult?.InRangeItems ?? 0).ToString(), azureBlogEntries.Count.ToString(), "Blog posts"));
-        metrics.SourceCounts.Add(new SourceCount("Aspire Blog", (aspireBlogResult?.TotalItems ?? 0).ToString(), (aspireBlogResult?.InRangeItems ?? 0).ToString(), aspireBlogEntries.Count.ToString(), "Blog posts"));
-        metrics.SourceCounts.Add(new SourceCount("TypeScript Blog", (typeScriptBlogResult?.TotalItems ?? 0).ToString(), (typeScriptBlogResult?.InRangeItems ?? 0).ToString(), typeScriptBlogEntries.Count.ToString(), "Blog posts"));
-        metrics.SourceCounts.Add(new SourceCount("GitHub Blog", (githubBlogResult?.TotalItems ?? 0).ToString(), (githubBlogResult?.InRangeItems ?? 0).ToString(), githubBlogEntries.Count.ToString(), "Blog posts"));
-        metrics.SourceCounts.Add(new SourceCount("YouTube .NET", (youtubeDotNetResult?.TotalItems ?? 0).ToString(), (youtubeDotNetResult?.InRangeItems ?? 0).ToString(), youtubeDotNetEntries.Count.ToString(), "Videos"));
-        metrics.SourceCounts.Add(new SourceCount("YouTube Visual Studio", (youtubeVSResult?.TotalItems ?? 0).ToString(), (youtubeVSResult?.InRangeItems ?? 0).ToString(), youtubeVSEntries.Count.ToString(), "Videos"));
-        metrics.SourceCounts.Add(new SourceCount("YouTube VS Code", (youtubeVSCodeResult?.TotalItems ?? 0).ToString(), (youtubeVSCodeResult?.InRangeItems ?? 0).ToString(), youtubeVSCodeEntries.Count.ToString(), "Videos"));
-        metrics.SourceCounts.Add(new SourceCount("YouTube GitHub", (youtubeGitHubResult?.TotalItems ?? 0).ToString(), (youtubeGitHubResult?.InRangeItems ?? 0).ToString(), youtubeGitHubEntries.Count.ToString(), "Videos"));
-        metrics.SourceCounts.Add(new SourceCount("YouTube Microsoft Dev", (youtubeMicrosoftDevResult?.TotalItems ?? 0).ToString(), (youtubeMicrosoftDevResult?.InRangeItems ?? 0).ToString(), youtubeMicrosoftDevEntries.Count.ToString(), "Videos"));
+        var cliReleases = Entries("cli");
+        var sdkReleases = Entries("sdk");
+        var changelogEntries = Entries("changelog");
+        var vscodeBlogEntries = Entries("vscodeBlog");
+        var dotNetBlogEntries = Entries("dotNet");
+        var devBlogEntries = Entries("devBlog");
+        var vsBlogEntries = Entries("vsBlog");
+        var azureBlogEntries = Entries("azure");
+        var aspireBlogEntries = Entries("aspire");
+        var typeScriptBlogEntries = Entries("typeScript");
+        var githubBlogEntries = Entries("githubBlog");
+        var youtubeDotNetEntries = Entries("ytDotNet");
+        var youtubeVSEntries = Entries("ytVS");
+        var youtubeVSCodeEntries = Entries("ytVSCode");
+        var youtubeGitHubEntries = Entries("ytGitHub");
+        var youtubeMicrosoftDevEntries = Entries("ytMSDev");
+
+        // Consolidate CLI/SDK prereleases
+        (cliReleases, _) = ConsolidateAndTrack("Copilot CLI", cliReleases, feedResults.GetValueOrDefault("cli"), metrics);
+        (sdkReleases, _) = ConsolidateAndTrack("Copilot SDK", sdkReleases, feedResults.GetValueOrDefault("sdk"), metrics);
+
+        // Track source counts and build summary table
+        foreach (var descriptor in feedDescriptors)
+        {
+            var result = feedResults.GetValueOrDefault(descriptor.Key);
+            var entries = descriptor.Key is "cli" ? cliReleases : descriptor.Key is "sdk" ? sdkReleases : Entries(descriptor.Key);
+            metrics.SourceCounts.Add(new SourceCount(
+                descriptor.Label,
+                (result?.TotalItems ?? 0).ToString(),
+                (result?.InRangeItems ?? 0).ToString(),
+                entries.Count.ToString(),
+                descriptor.Notes));
+        }
+        metrics.SourceCounts.Add(new SourceCount(
+            "VS Code Insiders",
+            (vscodeNotesResult?.CandidateUrlCount ?? 0).ToString(),
+            (vscodeNotesResult?.MatchedSectionCount ?? 0).ToString(),
+            (vscodeNotesResult?.UniqueFeatureCount ?? 0).ToString(),
+            "Release note features"));
 
         var vscodeFeatureCount = vscodeReleaseNotes?.Features.Count ?? 0;
-        var totalItems = cliReleases.Count + sdkReleases.Count + changelogEntries.Count +
-            vscodeFeatureCount + vscodeBlogEntries.Count + dotNetBlogEntries.Count + devBlogEntries.Count +
-            vsBlogEntries.Count + azureBlogEntries.Count + aspireBlogEntries.Count +
-            typeScriptBlogEntries.Count + githubBlogEntries.Count + youtubeDotNetEntries.Count +
-            youtubeVSEntries.Count + youtubeVSCodeEntries.Count + youtubeGitHubEntries.Count +
-            youtubeMicrosoftDevEntries.Count;
+        var totalItems = feedResults.Values.Sum(r => r.Entries.Count) + vscodeFeatureCount;
 
         if (totalItems == 0)
         {
@@ -751,31 +615,18 @@ internal static partial class NewsletterApp
             return (null, defaultTitle);
         }
 
-        static string CountCell(int n) => n == 0 ? "[dim]0[/]" : $"[green]{n}[/]";
-
         var table = new Table()
             .Border(TableBorder.Rounded)
             .BorderColor(Color.Grey)
             .AddColumn(new TableColumn("[bold]Source[/]").LeftAligned())
             .AddColumn(new TableColumn("[bold]Items[/]").Centered());
 
-        table.AddRow("[cornflowerblue]Copilot CLI releases[/]", CountCell(cliReleases.Count));
-        table.AddRow("[cornflowerblue]Copilot SDK releases[/]", CountCell(sdkReleases.Count));
-        table.AddRow("[cornflowerblue]Copilot Changelog[/]", CountCell(changelogEntries.Count));
-        table.AddRow("[cornflowerblue]VS Code Insiders[/]", CountCell(vscodeFeatureCount));
-        table.AddRow("[cornflowerblue]VS Code Blog[/]", CountCell(vscodeBlogEntries.Count));
-        table.AddRow("[cornflowerblue].NET Blog[/]", CountCell(dotNetBlogEntries.Count));
-        table.AddRow("[cornflowerblue]Developer Blog[/]", CountCell(devBlogEntries.Count));
-        table.AddRow("[cornflowerblue]Visual Studio Blog[/]", CountCell(vsBlogEntries.Count));
-        table.AddRow("[cornflowerblue]Azure Blog[/]", CountCell(azureBlogEntries.Count));
-        table.AddRow("[cornflowerblue]Aspire Blog[/]", CountCell(aspireBlogEntries.Count));
-        table.AddRow("[cornflowerblue]TypeScript Blog[/]", CountCell(typeScriptBlogEntries.Count));
-        table.AddRow("[cornflowerblue]GitHub Blog[/]", CountCell(githubBlogEntries.Count));
-        table.AddRow("[cornflowerblue]YouTube .NET[/]", CountCell(youtubeDotNetEntries.Count));
-        table.AddRow("[cornflowerblue]YouTube Visual Studio[/]", CountCell(youtubeVSEntries.Count));
-        table.AddRow("[cornflowerblue]YouTube VS Code[/]", CountCell(youtubeVSCodeEntries.Count));
-        table.AddRow("[cornflowerblue]YouTube GitHub[/]", CountCell(youtubeGitHubEntries.Count));
-        table.AddRow("[cornflowerblue]YouTube Microsoft Dev[/]", CountCell(youtubeMicrosoftDevEntries.Count));
+        foreach (var descriptor in feedDescriptors)
+        {
+            var entries = descriptor.Key is "cli" ? cliReleases : descriptor.Key is "sdk" ? sdkReleases : Entries(descriptor.Key);
+            table.AddRow($"[cornflowerblue]{Markup.Escape(descriptor.Label)}[/]", FormatCountCell(entries.Count));
+        }
+        table.AddRow("[cornflowerblue]VS Code Insiders[/]", FormatCountCell(vscodeFeatureCount));
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
@@ -905,26 +756,11 @@ internal static partial class NewsletterApp
         contentBuilder.AppendLine(welcomeSection);
         contentBuilder.AppendLine();
 
-        foreach (var section in new[] { copilotSection, vscodeSection, vsSection })
-        {
-            if (!string.IsNullOrWhiteSpace(section))
-            {
-                contentBuilder.AppendLine(section);
-                contentBuilder.AppendLine();
-            }
-        }
-        foreach (var section in majorReleaseSections.Where(s => !string.IsNullOrWhiteSpace(s)))
+        List<string> allBodySections = [copilotSection, vscodeSection, vsSection, ..majorReleaseSections, blogsSection, videosSection];
+        foreach (var section in allBodySections.Where(s => !string.IsNullOrWhiteSpace(s)))
         {
             contentBuilder.AppendLine(section);
             contentBuilder.AppendLine();
-        }
-        foreach (var section in new[] { blogsSection, videosSection })
-        {
-            if (!string.IsNullOrWhiteSpace(section))
-            {
-                contentBuilder.AppendLine(section);
-                contentBuilder.AppendLine();
-            }
         }
 
         content = contentBuilder.ToString().Trim();
@@ -936,6 +772,34 @@ internal static partial class NewsletterApp
         }
 
         return (content, title);
+    }
+
+    private static (List<ReleaseEntry> Releases, PrereleaseConsolidationResult Consolidation) ConsolidateAndTrack(
+        string sourceName,
+        List<ReleaseEntry> releases,
+        FeedFetchResult? fetchResult,
+        RunMetrics metrics)
+    {
+        var consolidation = AtomFeedService.ConsolidatePrereleasesWithMetrics(releases);
+
+        metrics.PrereleaseCounts.Add(new PrereleaseCount(
+            sourceName,
+            fetchResult?.MatchedItems ?? 0,
+            consolidation.Releases.Select(r => r.Version).ToList(),
+            consolidation.RolledUpPrereleases,
+            consolidation.SkippedPrereleases));
+
+        return (consolidation.Releases, consolidation);
+    }
+
+    private static string FormatCountCell(int n) => n == 0 ? "[dim]0[/]" : $"[green]{n}[/]";
+
+    private static string FormatItemsCell(IEnumerable<ReleaseEntry> entries, int max = 3)
+    {
+        var titles = entries.Take(max)
+            .Select(e => $"[white]{Markup.Escape(e.Version.Length > 40 ? e.Version[..40] + "..." : e.Version)}[/]");
+        var list = string.Join(", ", titles);
+        return list.Length == 0 ? "[dim]none[/]" : list;
     }
 
     private static bool MentionsVsCode(ReleaseEntry entry)
