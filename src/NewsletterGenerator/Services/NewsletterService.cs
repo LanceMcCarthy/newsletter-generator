@@ -689,13 +689,10 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         sb.AppendLine($"""
             Generate the "VS Code" section for a DevTech MVP newsletter covering {weekStart:MMMM d} to {weekEnd:MMMM d, yyyy}.
 
-            Write one summary sentence, then split into two sub-sections:
-            1. The latest stable VS Code release (from blog entries below) with 3-4 bullets.
-            2. The latest VS Code Insiders release (from release notes below) with 3-4 bullets.
-            If only one release is available, use a single sub-section.
+            Write one summary sentence, then include a sub-section for each available release (stable and/or Insiders) with 3-4 bullets each.
             Each bullet links to the release notes page or blog post.
 
-            Output exactly this format:
+            If both stable and Insiders releases are available, use this format:
 
             ---
             ## VS Code
@@ -713,6 +710,19 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             [one sentence summary of the Insiders release]
 
             - **[Label](url)** - description.
+            ---
+
+            If only one release is available, use this format:
+
+            ---
+            ## VS Code
+
+            ### [VS Code X.Y](release-url)
+
+            [one sentence summary of the release]
+
+            - **[Label](url)** - description.
+            ---
 
             Source material:
 
