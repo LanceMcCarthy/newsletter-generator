@@ -600,6 +600,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         TONE: Direct, developer-to-developer. No marketing fluff or hyperbole. Factual and concise.
         Every bullet MUST include a markdown link to its source URL.
         No emoji in bullets.
+        Keep bullet descriptions to one sentence, ideally under 25 words.
         OUTPUT: Only the requested Markdown section. No preamble, no commentary, no code fences.
         Start directly with the --- separator and ## heading.
         """;
@@ -656,6 +657,10 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
 
             - **[Label](url)** - description.
 
+            Release notes: [copilot-cli](https://github.com/github/copilot-cli/releases) / [copilot-sdk](https://github.com/github/copilot-sdk/releases)
+
+            IMPORTANT: Always end the section with the "Release notes:" line shown above, exactly as written.
+
             Source material:
 
             """);
@@ -684,8 +689,10 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         sb.AppendLine($"""
             Generate the "VS Code" section for a DevTech MVP newsletter covering {weekStart:MMMM d} to {weekEnd:MMMM d, yyyy}.
 
-            Write one summary sentence followed by 3-5 bullets.
-            Prefer feature bullets from release notes when available.
+            Write one summary sentence, then split into two sub-sections:
+            1. The latest stable VS Code release (from blog entries below) with 3-4 bullets.
+            2. The latest VS Code Insiders release (from release notes below) with 3-4 bullets.
+            If only one release is available, use a single sub-section.
             Each bullet links to the release notes page or blog post.
 
             Output exactly this format:
@@ -693,10 +700,19 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             ---
             ## VS Code
 
-            [summary sentence]
+            [summary sentence covering both releases]
+
+            ### [VS Code X.Y](stable-release-url)
+
+            [one sentence summary of the stable release]
 
             - **[Label](url)** - description.
-            {(vscodeReleaseNotes is not null ? $"\nEnd with: Release notes: [VS Code Insiders]({vscodeReleaseNotes.WebsiteUrl})" : "")}
+
+            ### [VS Code Insiders X.Y](insiders-release-url)
+
+            [one sentence summary of the Insiders release]
+
+            - **[Label](url)** - description.
 
             Source material:
 
@@ -822,7 +838,8 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
 
             Curate the most interesting 5-8 posts across .NET, Azure, Aspire, TypeScript, GitHub Blog, and developer.microsoft.com blogs.
             Group by topic area. Be highly selective - only include posts that would interest an MVP audience.
-            Each bullet: - **[Title](url)** - one sentence summary.
+            Each bullet: - **[Title](url)** - one SHORT sentence summary (under 20 words).
+            Brevity is critical. State what changed or shipped, not background context.
 
             Output exactly this format:
 
@@ -924,21 +941,29 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             - 🚀 **[TypeScript 6.0 released](https://devblogs.microsoft.com/typescript/...)** - ships with isolated declarations
             - 🔧 **[Copilot CLI v1.2](https://github.com/github/copilot-cli/releases)** - adds streaming output
 
+            After the bullets, add a short transition sentence like:
+            "That's it! You're caught up now! Details below if you want to know more."
+
             Output exactly this format:
 
             Welcome
             --------
 
+            **TLDR:**
             [paragraphs with inline links]
 
             [emoji bullets with linked bold labels]
 
+            [transition sentence]
+
             * * * * *
 
             RULES:
+            - Start with **TLDR:** before the summary paragraphs
             - Every emoji bullet MUST have its bold label wrapped in a markdown link: **[Label](url)**
             - Use actual URLs from the section content below
             - Emoji ONLY in the Welcome bullet highlights, not in paragraphs
+            - End with a brief transition sentence before the separator
 
             Section content to summarize:
 

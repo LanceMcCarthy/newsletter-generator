@@ -22,6 +22,7 @@ artifacts/
 *.userosscache
 *.sln.docstates
 *.userprefs
+*.lscache
 
 # Test results
 TestResults/
