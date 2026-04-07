@@ -153,7 +153,7 @@ internal static partial class NewsletterApp
             if (!string.IsNullOrWhiteSpace(content))
             {
                 content = PrefixNewsletterName(content, title, weekStartDate, weekEndDate, selectedModel);
-                content = content.Replace('—', '-').Replace('–', '-');
+                content = NormalizeDashes(content);
 
                 if (!nonInteractive)
                 {
@@ -173,7 +173,7 @@ internal static partial class NewsletterApp
                             revisionRequest,
                             GetNewsletterLabel(selectedNewsletter),
                             selectedModel);
-                        content = content.Replace('—', '-').Replace('–', '-');
+                        content = NormalizeDashes(content);
                         revisionStopwatch.Stop();
 
                         metrics.StageSeconds["Apply revisions"] =
@@ -464,6 +464,9 @@ internal static partial class NewsletterApp
 
         return headingCount + (hasWelcomeSection ? 1 : 0);
     }
+
+    private static string NormalizeDashes(string text)
+        => text.Replace('\u2014', '-').Replace('\u2013', '-');
 
     // ── Copilot startup & model selection ───────────────────────────────────
 

@@ -404,15 +404,14 @@ internal static partial class NewsletterApp
         return sections;
     }
 
-    private static bool ShouldIncludePreviewSection(string heading)
+    private static readonly HashSet<string> ExcludedPreviewSections = new(StringComparer.OrdinalIgnoreCase)
     {
-        return !heading.Equals("Welcome", StringComparison.OrdinalIgnoreCase)
-            && !heading.Equals("News and Announcements", StringComparison.OrdinalIgnoreCase)
-            && !heading.Equals("Office Hours", StringComparison.OrdinalIgnoreCase)
-            && !heading.Equals("Get Started", StringComparison.OrdinalIgnoreCase)
-            && !heading.Equals("Training and Courses", StringComparison.OrdinalIgnoreCase)
-            && !heading.Equals("Stay Up To Date & Engage", StringComparison.OrdinalIgnoreCase);
-    }
+        "Welcome", "News and Announcements", "Office Hours",
+        "Get Started", "Training and Courses", "Stay Up To Date & Engage"
+    };
+
+    private static bool ShouldIncludePreviewSection(string heading)
+        => !ExcludedPreviewSections.Contains(heading);
 
     private static List<string> BuildPreviewItems(NewsletterType newsletter, string heading, List<string> lines)
     {

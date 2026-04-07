@@ -7,6 +7,8 @@ namespace NewsletterGenerator.Services;
 
 public class CacheService(ILogger<CacheService> logger, string? cacheDirectory = null, bool forceRefresh = false)
 {
+    private static readonly JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
+
     private readonly string _cacheDir = cacheDirectory ?? Path.Combine(Directory.GetCurrentDirectory(), ".cache");
     private readonly bool _forceRefresh = forceRefresh;
     private readonly ConcurrentDictionary<string, CacheSectionMetric> _sectionMetrics = new(StringComparer.OrdinalIgnoreCase);
@@ -111,10 +113,7 @@ public class CacheService(ILogger<CacheService> logger, string? cacheDirectory =
             Timestamp = DateTimeOffset.UtcNow
         };
 
-        var json = JsonSerializer.Serialize(cached, new JsonSerializerOptions
-        {
-            WriteIndented = true
-        });
+        var json = JsonSerializer.Serialize(cached, IndentedJsonOptions);
 
         await File.WriteAllTextAsync(cacheFile, json);
         RecordSaveOutcome(cacheKey, "saved", content.Length);
@@ -240,10 +239,7 @@ public class CacheService(ILogger<CacheService> logger, string? cacheDirectory =
             Timestamp = DateTimeOffset.UtcNow
         };
 
-        var json = JsonSerializer.Serialize(cached, new JsonSerializerOptions
-        {
-            WriteIndented = true
-        });
+        var json = JsonSerializer.Serialize(cached, IndentedJsonOptions);
 
         await File.WriteAllTextAsync(cacheFile, json);
         RecordSaveOutcome(cacheKey, "saved", content.Length);
