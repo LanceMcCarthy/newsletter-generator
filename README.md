@@ -1,6 +1,6 @@
 # newsletter-generator
 
-Automated weekly newsletter generator for GitHub Copilot CLI/SDK or VS Code Insiders updates.
+Automated newsletter generator for GitHub Copilot CLI/SDK, VS Code Insiders, or DevTech MVP updates.
 
 > **Note:** This tool was built for generating internal team newsletters, but all source data comes from public release feeds and blog posts. You're welcome to fork and adapt it for your own newsletter needs.
 
@@ -15,7 +15,7 @@ This tool generates a curated weekly newsletter by:
 
 At startup, you'll choose:
 
-- **Newsletter type** - GitHub Copilot CLI/SDK or VS Code Insiders
+- **Newsletter type** - GitHub Copilot CLI/SDK, VS Code Insiders, or DevTech MVP
 - **Copilot model** - The model used for newsletter generation prompts
 - **Cache behavior** - Use cache, clear cache, or force refresh for the run
 
@@ -25,53 +25,44 @@ The console UI now includes:
 - **Run Review** confirmation before generation
 - **Run Dashboard** summary with source counts, cache stats, stage durations, and a release tree showing prereleases that were rolled up or skipped
 
-The output is a markdown newsletter with these main sections:
+The output is a markdown newsletter. Sections vary by newsletter type:
 
-- **Welcome** - Brief opening paragraph summarizing the week's highlights
-- **News and Announcements** - Curated changelog/blog items (for the Copilot CLI/SDK newsletter)
-- **Project Updates** - Product-specific release highlights
+- **Copilot CLI/SDK** — Welcome, News & Announcements, Project Updates
+- **VS Code Insiders** — Welcome, News & Announcements, Project Updates
+- **DevTech MVP** — Welcome, Copilot CLI & SDK, VS Code, Visual Studio, Major Releases (auto-detected), Developer Blogs, Developer Videos
 
 ## Information flow
 
 ```mermaid
 flowchart LR
     subgraph Sources[Public data sources]
-        CLI[Copilot CLI releases.atom]
-        SDK[Copilot SDK releases.atom]
-        CHG[GitHub Changelog feed]
-        BLOG[GitHub Blog feed]
-        VSCODE[VS Code Insiders release notes]
-        VSBLOG[VS Code blog feed]
+        FEEDS[Atom/RSS feeds\nGitHub · Microsoft · YouTube]
+        VSCODE[VS Code Insiders\nrelease notes markdown]
     end
 
     subgraph Ingestion[Ingestion and normalization]
         ATOM[AtomFeedService]
         VS[VSCodeReleaseNotesService]
-        FILTER[HTML stripping and low-value filtering]
+        FILTER[HTML stripping and\nlow-value filtering]
         PRE[Prerelease consolidation]
     end
 
     subgraph App[Generation pipeline]
-        INPUT[Date range + newsletter type + model]
+        INPUT[Date range +\nnewsletter type + model]
         CACHE[CacheService\nsection cache]
-        PROMPTS[NewsletterService prompts]
+        PROMPTS[NewsletterService\nprompts]
         COPILOT[GitHub Copilot SDK\nCopilotClient + CopilotSession]
-        SECTIONS[Welcome + News + Project Updates + Title]
+        SECTIONS[Section content + title]
     end
 
     subgraph Output[Run results]
-        DASH[Console progress + run dashboard]
+        DASH[Console progress +\nrun dashboard]
         FILE[output/newsletter-...md]
         LOGS["log/newsletter-{Date}.log"]
     end
 
-    CLI --> ATOM
-    SDK --> ATOM
-    CHG --> ATOM
-    BLOG --> ATOM
-    VSBLOG --> ATOM
+    FEEDS --> ATOM
     VSCODE --> VS
-
     ATOM --> FILTER
     VS --> FILTER
     FILTER --> PRE
@@ -163,6 +154,7 @@ dotnet run -- --clear-cache 7
 ```bash
 dotnet run -- --newsletter copilot
 dotnet run -- --newsletter vscode
+dotnet run -- --newsletter devtech
 ```
 
 **Choose model via CLI:**
@@ -207,6 +199,7 @@ Generated newsletters are saved to:
 ```text
 output/newsletter-copilot-cli-sdk-YYYY-MM-DD.md
 output/newsletter-vscode-insiders-YYYY-MM-DD.md
+output/newsletter-devtech-mvp-YYYY-MM-DD.md
 ```
 
 The filename uses the end date of the coverage period and includes the newsletter slug.
@@ -226,13 +219,29 @@ Cache files are stored in `src/NewsletterGenerator/.cache/` and use SHA256 hashi
 
 The tool fetches from these sources:
 
+**Copilot CLI/SDK & shared sources:**
+
 - **CLI Releases**: <https://github.com/github/copilot-cli/releases.atom>
 - **SDK Releases**: <https://github.com/github/copilot-sdk/releases.atom>
 - **Changelog**: <https://github.blog/changelog/label/copilot/feed/>
-- **Blog**: <https://github.blog/feed/>
-- **VS Code Insiders**: <https://aka.ms/vscode/updates/insiders> (resolved to the current release notes markdown)
-- **VS Code Blog**: <https://code.visualstudio.com/feed.xml> (for VS Code newsletter mode)
-- **GitHub Changelog + Blog VS Code mentions**: Copilot changelog entries and blog posts that mention VS Code (for VS Code newsletter mode)
+- **GitHub Blog**: <https://github.blog/feed/>
+
+**VS Code Insiders:**
+
+- **VS Code Insiders release notes**: <https://aka.ms/vscode/updates/insiders> (resolved to the current release notes markdown)
+- **VS Code Blog**: <https://code.visualstudio.com/feed.xml>
+- **GitHub Changelog + Blog VS Code mentions**: Copilot changelog entries and blog posts that mention VS Code
+
+**DevTech MVP** (includes the Copilot and VS Code sources above, plus):
+
+- **.NET Blog**: <https://devblogs.microsoft.com/dotnet/feed/>
+- **Developer Blog**: <https://devblogs.microsoft.com/feed/>
+- **Visual Studio Blog**: <https://devblogs.microsoft.com/visualstudio/feed/>
+- **Azure Blog**: <https://devblogs.microsoft.com/all-things-azure/feed/>
+- **Aspire Blog**: <https://devblogs.microsoft.com/aspire/feed/>
+- **TypeScript Blog**: <https://devblogs.microsoft.com/typescript/feed/>
+- **YouTube channels**: .NET, Visual Studio, VS Code, GitHub, Microsoft Dev
+- **Visual Studio release notes**: <https://learn.microsoft.com/visualstudio/releases/2026/release-notes>
 
 Filtering rules and summarization prompts can be modified in:
 
