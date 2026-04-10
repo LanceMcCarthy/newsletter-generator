@@ -36,6 +36,9 @@ internal static partial class NewsletterApp
         var programLogger = loggerFactory.CreateLogger("Program");
         programLogger.LogInformation("Newsletter generator started");
 
+        // Start Copilot connectivity checks early so they run during header rendering.
+        var copilotStartupTask = StartCopilotStartupAsync();
+
         if (!Console.IsOutputRedirected)
             RenderHeader();
 
@@ -46,7 +49,7 @@ internal static partial class NewsletterApp
             var metrics = new RunMetrics();
             var runStopwatch = Stopwatch.StartNew();
 
-            var availableModels = await PrintCopilotStartupStatusAsync(metrics);
+            var availableModels = await FinishCopilotStartupAsync(copilotStartupTask, metrics);
 
             var selectedNewsletter = ResolveNewsletterType(settings.Newsletter) ??
                 (nonInteractive ? NewsletterType.CopilotCliSdk : PromptForNewsletterType());
@@ -468,23 +471,29 @@ internal static partial class NewsletterApp
 
     // ── Copilot startup & model selection ───────────────────────────────────
 
-    public static async Task<List<ModelInfo>?> PrintCopilotStartupStatusAsync(RunMetrics? metrics = null)
-    {
-        string cliPath = "copilot";
-        string versionStatus = "Unknown";
-        string authStatus = "Unknown";
-        bool isAuthenticated = false;
-        string sdkStatus = "Unknown";
-        List<ModelInfo>? models = null;
+    private record CopilotStartupResult(
+        string CliPath,
+        string VersionStatus,
+        double CliSeconds,
+        bool IsAuthenticated,
+        string AuthStatus,
+        List<ModelInfo>? Models,
+        string SdkStatus,
+        string PingStatus,
+        double SdkSeconds,
+        string? SdkError);
 
-        await AnsiConsole.Status()
-            .Spinner(Spinner.Known.Dots)
-            .SpinnerStyle(Style.Parse("cornflowerblue"))
-            .StartAsync("Connecting to Copilot CLI...", async ctx =>
+    /// <summary>
+    /// Kicks off CLI discovery and SDK connection as background tasks.
+    /// Call <see cref="FinishCopilotStartupAsync"/> to await and display results.
+    /// </summary>
+    private static Task<CopilotStartupResult> StartCopilotStartupAsync()
+    {
+        return Task.Run(async () =>
         {
             var cliTask = Task.Run(async () =>
             {
-                var cliStopwatch = Stopwatch.StartNew();
+                var sw = Stopwatch.StartNew();
                 var path = await TryFindCopilotCliOnPathAsync() ?? "copilot";
                 var versionResult = await TryRunProcessAsync(path, "--version");
                 string version;
@@ -492,13 +501,13 @@ internal static partial class NewsletterApp
                     version = string.IsNullOrWhiteSpace(versionResult.standardOutput) ? "Available" : versionResult.standardOutput;
                 else
                     version = string.IsNullOrWhiteSpace(versionResult.standardError) ? "Unavailable" : versionResult.standardError;
-                cliStopwatch.Stop();
-                return (path, version, cliStopwatch.Elapsed.TotalSeconds);
+                sw.Stop();
+                return (path, version, sw.Elapsed.TotalSeconds);
             });
 
             var sdkTask = Task.Run(async () =>
             {
-                var sdkStopwatch = Stopwatch.StartNew();
+                var sw = Stopwatch.StartNew();
                 await using var client = new CopilotClient();
                 var sdkAuthStatus = await client.GetAuthStatusAsync();
 
@@ -517,41 +526,68 @@ internal static partial class NewsletterApp
                 var m = await modelsTask;
                 var ping = await pingTask;
                 var status = m == null ? "Connected" : $"Connected ({m.Count} models available, ping: {ping})";
-                sdkStopwatch.Stop();
+                sw.Stop();
 
-                return (authed, auth, m, status, ping, sdkStopwatch.Elapsed.TotalSeconds);
+                return (authed, auth, m, status, ping, sw.Elapsed.TotalSeconds);
             });
 
-            try
-            {
-                await Task.WhenAll(cliTask, sdkTask);
-            }
-            catch
-            {
-                // Individual results handled below
-            }
+            string cliPath = "copilot", versionStatus = "Unknown";
+            double cliSeconds = 0;
+            bool isAuthenticated = false;
+            string authStatus = "Unknown", sdkStatus = "Unknown", pingStatus = "Unknown";
+            List<ModelInfo>? models = null;
+            double sdkSeconds = 0;
+            string? sdkError = null;
+
+            try { await Task.WhenAll(cliTask, sdkTask); } catch { /* handled below */ }
 
             if (cliTask.IsCompletedSuccessfully)
-            {
-                (cliPath, versionStatus, var cliSeconds) = cliTask.Result;
-                metrics?.StageSeconds.TryAdd("Startup: CLI discovery", cliSeconds);
-            }
+                (cliPath, versionStatus, cliSeconds) = cliTask.Result;
 
             if (sdkTask.IsCompletedSuccessfully)
-            {
-                (isAuthenticated, authStatus, models, sdkStatus, var pingStatus, var sdkSeconds) = sdkTask.Result;
-                metrics?.StageSeconds.TryAdd("Startup: SDK ready", sdkSeconds);
-                if (!string.Equals(pingStatus, "OK", StringComparison.OrdinalIgnoreCase))
-                    metrics?.Warnings.Add("Copilot SDK ping failed during startup checks.");
-            }
+                (isAuthenticated, authStatus, models, sdkStatus, pingStatus, sdkSeconds) = sdkTask.Result;
             else if (sdkTask.IsFaulted)
             {
                 var ex = sdkTask.Exception?.InnerException ?? sdkTask.Exception;
                 authStatus = ex?.Message ?? "Unknown error";
                 sdkStatus = $"Not ready: {Truncate(ex?.Message ?? "Unknown error", 120)}";
-                metrics?.Warnings.Add($"Copilot SDK startup failed: {ex?.Message ?? "Unknown error"}");
+                sdkError = ex?.Message ?? "Unknown error";
             }
+
+            return new CopilotStartupResult(
+                cliPath, versionStatus, cliSeconds,
+                isAuthenticated, authStatus, models, sdkStatus, pingStatus, sdkSeconds,
+                sdkError);
         });
+    }
+
+    /// <summary>
+    /// Awaits the pre-started startup task, records metrics, and renders the status table.
+    /// </summary>
+    private static async Task<List<ModelInfo>?> FinishCopilotStartupAsync(
+        Task<CopilotStartupResult> startupTask,
+        RunMetrics? metrics = null)
+    {
+        CopilotStartupResult result;
+
+        await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .SpinnerStyle(Style.Parse("cornflowerblue"))
+            .StartAsync("Connecting to Copilot CLI...", async _ =>
+        {
+            result = await startupTask;
+        });
+
+        result = startupTask.Result;
+
+        metrics?.StageSeconds.TryAdd("Startup: CLI discovery", result.CliSeconds);
+        metrics?.StageSeconds.TryAdd("Startup: SDK ready", result.SdkSeconds);
+
+        if (!string.Equals(result.PingStatus, "OK", StringComparison.OrdinalIgnoreCase) && result.SdkError == null)
+            metrics?.Warnings.Add("Copilot SDK ping failed during startup checks.");
+
+        if (result.SdkError != null)
+            metrics?.Warnings.Add($"Copilot SDK startup failed: {result.SdkError}");
 
         var statusTable = new Table()
             .Border(TableBorder.Rounded)
@@ -559,15 +595,23 @@ internal static partial class NewsletterApp
             .AddColumn("[bold]Copilot startup status[/]")
             .AddColumn("[bold]Details[/]");
 
-        statusTable.AddRow("CLI path", Markup.Escape(cliPath));
-        statusTable.AddRow("CLI version", Markup.Escape(versionStatus));
-        statusTable.AddRow("Auth", Markup.Escape(isAuthenticated ? $"Authenticated: {authStatus}" : $"Not authenticated: {authStatus}"));
-        statusTable.AddRow("SDK", Markup.Escape(sdkStatus));
+        statusTable.AddRow("CLI path", Markup.Escape(result.CliPath));
+        statusTable.AddRow("CLI version", Markup.Escape(result.VersionStatus));
+        statusTable.AddRow("Auth", Markup.Escape(result.IsAuthenticated
+            ? $"Authenticated: {result.AuthStatus}"
+            : $"Not authenticated: {result.AuthStatus}"));
+        statusTable.AddRow("SDK", Markup.Escape(result.SdkStatus));
 
         AnsiConsole.Write(statusTable);
         AnsiConsole.WriteLine();
 
-        return models;
+        return result.Models;
+    }
+
+    public static async Task<List<ModelInfo>?> PrintCopilotStartupStatusAsync(RunMetrics? metrics = null)
+    {
+        var task = StartCopilotStartupAsync();
+        return await FinishCopilotStartupAsync(task, metrics);
     }
 
     private static async Task<string?> TryFindCopilotCliOnPathAsync()
