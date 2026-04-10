@@ -10,8 +10,6 @@ namespace NewsletterGenerator;
 
 internal static partial class NewsletterApp
 {
-    private static readonly FigletFont HeaderFont = FigletFont.Load(
-        Path.Combine(AppContext.BaseDirectory, "Assets", "ansi-shadow.flf"));
 
     public static async Task<int> RunGenerateAsync(GenerateSettings settings)
     {
