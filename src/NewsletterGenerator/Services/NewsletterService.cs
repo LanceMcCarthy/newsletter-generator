@@ -494,7 +494,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         });
 
         var sourceHash = CacheService.GetContentHash(sourceData);
-        var cached = await cache.TryGetCachedAsync("vscode-newsletter", sourceHash);
+        var cached = await cache.TryGetCachedAsync("vscode-newsletter-v2", sourceHash);
         if (cached != null)
         {
             AnsiConsole.MarkupLine("[dim]Using cached VS Code newsletter[/]");
@@ -506,7 +506,8 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             model,
             """
                     You are a technical newsletter editor writing for an internal Microsoft developer audience.
-                    Your job is to summarize weekly VS Code Insiders updates in a concise, factual tone.
+                    Your job is to summarize weekly VS Code updates in a concise, factual tone.
+                    VS Code now ships weekly Stable releases with multiple Insiders updates per week.
 
                     TONE GUIDELINES:
                     - Professional and informative, not promotional
@@ -516,7 +517,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
                     OUTPUT REQUIREMENTS:
                     - Output ONLY final newsletter Markdown
                     - No preamble, no meta-commentary, no code fences
-                    - Use this exact structure:
+                    - Use this exact structure (omit sections that have no content):
 
                     Welcome
                     --------
@@ -526,15 +527,33 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
                     * * * * *
 
                     ---
-                    ## Project updates
+                    ## This Week in VS Code Stable
 
-                    ### VS Code Insiders
+                    <Summary of stable releases shipped this week from the VS Code Blog.
+                     Use 3-6 concise bullets grouped by themes.
+                     Each bullet MUST start with a relevant emoji before the bolded title.
+                     Format: - <emoji> **Title:** description
+                     If no stable release shipped this week, omit this entire section.>
 
-                    - 4-8 concise bullets grouped by themes
-                    - Each bullet MUST start with a relevant emoji before the bolded title
-                    - Format: - <emoji> **Title:** description
-                    - Example: - 🌐 **Native browser integration:** agents can now interact with page elements...
-                    - Pick emojis that match the topic (e.g., 🤖 for AI, 🔧 for tools, 🖥️ for terminal, 🔒 for security)
+                    ---
+                    ## News and Announcements
+
+                    <Relevant announcements from the GitHub Changelog or GitHub Blog that affect VS Code users.
+                     Use concise paragraphs with links to source URLs.
+                     Only include items directly relevant to VS Code.
+                     If nothing is relevant, omit this entire section.>
+
+                    ---
+                    ## VS Code Insiders Highlights (BUILD_NUMBER)
+
+                    <Curated highlights from Insiders builds this week.
+                     The heading MUST include the Insiders build number provided in the prompt (e.g., "## VS Code Insiders Highlights (1.116)").
+                     Use 4-8 concise bullets grouped by themes.
+                     Each bullet MUST start with a relevant emoji before the bolded title.
+                     Format: - <emoji> **Title:** description
+                     Example: - 🌐 **Native browser integration:** agents can now interact with page elements...
+                     Pick emojis that match the topic (e.g., 🤖 for AI, 🔧 for tools, 🖥️ for terminal, 🔒 for security)
+                     If no Insiders features are available, omit this entire section.>
 
                     Release notes: [VS Code Insiders](URL)
                     """);
@@ -543,24 +562,31 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             $"- [{f.Category}] {f.Description}{(string.IsNullOrWhiteSpace(f.Link) ? string.Empty : $" ({f.Link})")}"));
 
         var prompt = $"""
-            Generate a weekly VS Code Insiders newsletter covering {weekStart:MMMM d} to {weekEnd:MMMM d, yyyy}.
+            Generate a weekly VS Code newsletter covering {weekStart:MMMM d} to {weekEnd:MMMM d, yyyy}.
 
-            Source URL for release notes page: {releaseNotes.WebsiteUrl}
+            Source URL for Insiders release notes page: {releaseNotes.WebsiteUrl}
+            Current Insiders build number: {ExtractVersionFromUrl(releaseNotes.VersionUrl)}
 
-            Curate the most important developer-facing updates from this source list.
-            Combine related items into thematic bullets; avoid listing every tiny change.
+            VS Code now ships weekly Stable releases with multiple Insiders updates per week.
+            Separate content into the appropriate sections:
+            - "This Week in VS Code Stable" for stable release highlights (from blog posts about stable releases)
+            - "News and Announcements" for relevant changelog/blog items that don't fit the above (e.g., model deprecations, policy changes)
+            - "VS Code Insiders Highlights ({ExtractVersionFromUrl(releaseNotes.VersionUrl)})" for Insiders-specific features (from the parsed release notes below) - the heading MUST include the build number
 
-            Source features:
+            Curate the most important developer-facing updates. Combine related items into thematic bullets.
+            Omit any section that has no content.
+
+            Insiders release note features:
             {featureLines}
 
-            Additional weekly sources:
+            Additional weekly sources (use for Stable and News sections):
             {BuildVsCodeAdditionalSources(vscodeBlogEntries, githubChangelogEntries, githubBlogEntries)}
 
             Generate ONLY the final Markdown newsletter content.
             """;
 
         var result = await SendPromptAsync(copilot.Session, prompt);
-        await cache.SaveCacheAsync("vscode-newsletter", result, sourceHash);
+        await cache.SaveCacheAsync("vscode-newsletter-v2", result, sourceHash);
         return result;
     }
 
@@ -574,6 +600,15 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         AppendBlogEntries(sb, "GitHub Changelog entries mentioning VS Code", githubChangelogEntries);
         AppendBlogEntries(sb, "GitHub Blog posts mentioning VS Code", githubBlogEntries);
         return sb.ToString();
+    }
+
+    [GeneratedRegex(@"v1_(\d+)", RegexOptions.IgnoreCase)]
+    private static partial Regex InsidersVersionPattern();
+
+    private static string ExtractVersionFromUrl(string versionUrl)
+    {
+        var match = InsidersVersionPattern().Match(versionUrl);
+        return match.Success ? $"1.{match.Groups[1].Value}" : "Insiders";
     }
 
     // ── DevTech MVP multi-prompt section generation ────────────────────────

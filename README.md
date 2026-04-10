@@ -28,7 +28,7 @@ The console UI now includes:
 The output is a markdown newsletter. Sections vary by newsletter type:
 
 - **Copilot CLI/SDK** — Welcome, News & Announcements, Project Updates
-- **VS Code Insiders** — Welcome, News & Announcements, Project Updates
+- **VS Code** — Welcome, This Week in VS Code Stable, VS Code Insiders Highlights, News and Announcements (if applicable)
 - **DevTech MVP** — Welcome, Copilot CLI & SDK, VS Code, Visual Studio, Major Releases (auto-detected), Developer Blogs, Developer Videos
 
 ## Information flow
@@ -198,7 +198,7 @@ Generated newsletters are saved to:
 
 ```text
 output/newsletter-copilot-cli-sdk-YYYY-MM-DD.md
-output/newsletter-vscode-insiders-YYYY-MM-DD.md
+output/newsletter-vscode-YYYY-MM-DD.md
 output/newsletter-devtech-mvp-YYYY-MM-DD.md
 ```
 
