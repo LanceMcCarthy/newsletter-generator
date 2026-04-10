@@ -327,13 +327,13 @@ internal static partial class NewsletterApp
                 .PageSize(6)
                 .AddChoices([
                     "GitHub Copilot CLI/SDK",
-                    "VS Code Insiders",
+                    "VS Code",
                     "DevTech MVP"
                 ]));
 
         return choice switch
         {
-            "VS Code Insiders" => NewsletterType.VSCode,
+            "VS Code" => NewsletterType.VSCode,
             "DevTech MVP" => NewsletterType.DevTechMVP,
             _ => NewsletterType.CopilotCliSdk
         };
@@ -361,14 +361,14 @@ internal static partial class NewsletterApp
 
     internal static string GetNewsletterLabel(NewsletterType type) => type switch
     {
-        NewsletterType.VSCode => "VS Code Insiders",
+        NewsletterType.VSCode => "VS Code",
         NewsletterType.DevTechMVP => "DevTech MVP",
         _ => "GitHub Copilot CLI/SDK"
     };
 
     private static string GetNewsletterSlug(NewsletterType type) => type switch
     {
-        NewsletterType.VSCode => "vscode-insiders",
+        NewsletterType.VSCode => "vscode",
         NewsletterType.DevTechMVP => "devtech-mvp",
         _ => "copilot-cli-sdk"
     };
