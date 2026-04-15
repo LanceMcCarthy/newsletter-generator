@@ -926,7 +926,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
 
             Highlight 10 of the most interesting recent videos across the channels below.
             Focus on videos relevant to MVPs: developer tools, new features, AI + dev workflows, community content.
-            Each bullet: - **[Video title](youtube-url)** - one sentence describing the topic.
+            Each video entry MUST use a 📺 emoji prefix (not a dash bullet).
 
             Output exactly this format:
 

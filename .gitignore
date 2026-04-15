@@ -58,6 +58,9 @@ reference/
 ## Cache ##
 .cache/
 
+## Personal prompts (not shared) ##
+.github/prompts/personal/
+
 ## OS ##
 
 # Windows

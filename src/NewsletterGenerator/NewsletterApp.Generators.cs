@@ -756,12 +756,16 @@ internal static partial class NewsletterApp
         contentBuilder.AppendLine(welcomeSection);
         contentBuilder.AppendLine();
 
-        List<string> allBodySections = [copilotSection, vscodeSection, vsSection, ..majorReleaseSections, blogsSection, videosSection];
+        List<string> allBodySections = [copilotSection, vscodeSection, vsSection, .. majorReleaseSections, blogsSection, videosSection];
         foreach (var section in allBodySections.Where(s => !string.IsNullOrWhiteSpace(s)))
         {
             contentBuilder.AppendLine(section);
             contentBuilder.AppendLine();
         }
+
+        contentBuilder.AppendLine("---");
+        contentBuilder.AppendLine();
+        contentBuilder.AppendLine("What did you think! Helpful? Please let us know on this [2 minute form](https://forms.microsoft.com/r/85b0Ez8Qai). Oh, and of course we used the [GitHub Copilot SDK](https://github.com/github/copilot-sdk) to help pull this information together - you can check out the source code at <https://github.com/jongalloway/newsletter-generator>.");
 
         content = contentBuilder.ToString().Trim();
 
