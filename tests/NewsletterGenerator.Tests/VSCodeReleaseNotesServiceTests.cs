@@ -85,4 +85,66 @@ public class VSCodeReleaseNotesServiceTests
         var result = VSCodeReleaseNotesService.ExtractCategory("## February 10");
         Assert.Equal("General", result);
     }
+
+    // ── GetProductEdition ────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("---\nProductEdition: Insiders\n---\n# Content", "Insiders")]
+    [InlineData("---\nProductEdition: insiders\n---\n# Content", "insiders")]
+    [InlineData("---\nProductEdition: Stable\n---\n# Content", "Stable")]
+    [InlineData("# No front matter here", null)]
+    [InlineData("---\nTitle: Some Title\n---\n# Content", null)]
+    public void GetProductEdition_ReturnsCorrectEdition(string markdown, string? expected)
+    {
+        Assert.Equal(expected, VSCodeReleaseNotesService.GetProductEdition(markdown));
+    }
+
+    // ── ParseStableHighlights ─────────────────────────────────────────────────
+
+    [Fact]
+    public void ParseStableHighlights_ExtractsBulletsFromWelcomeSection()
+    {
+        var markdown = """
+            ---
+            ProductEdition: Stable
+            ---
+            # Visual Studio Code 1.116
+
+            ---
+
+            Welcome to the 1.116 release of Visual Studio Code. Here are some highlights:
+
+            * [Agent Debug Logs](#debug-previous-agent-sessions): view logs from previous agent sessions.
+            * [Copilot CLI thinking effort](#configure-thinking-effort): configure model thinking effort.
+
+            Happy Coding!
+
+            ---
+
+            ## Agent experience
+            """;
+
+        var highlights = VSCodeReleaseNotesService.ParseStableHighlights(markdown);
+
+        Assert.Equal(2, highlights.Count);
+        Assert.Equal("Agent Debug Logs: view logs from previous agent sessions.", highlights[0]);
+        Assert.Equal("Copilot CLI thinking effort: configure model thinking effort.", highlights[1]);
+    }
+
+    [Fact]
+    public void ParseStableHighlights_ReturnsEmptyForNoWelcomeSection()
+    {
+        var markdown = """
+            ---
+            ProductEdition: Stable
+            ---
+            # Visual Studio Code 1.116
+
+            ## Agent experience
+            """;
+
+        var highlights = VSCodeReleaseNotesService.ParseStableHighlights(markdown);
+
+        Assert.Empty(highlights);
+    }
 }

@@ -51,13 +51,31 @@ public partial class VSCodeReleaseNotesService
         string? versionUrl = null;
         var successfulUrls = 0;
         var matchedSections = 0;
+        List<string> stableHighlights = [];
+        List<StableFeatureCallout> stableFeatureCallouts = [];
+        string? stableVersionUrl = null;
 
         foreach (var url in candidateUrls)
         {
             try
             {
                 var markdown = await _http.GetStringAsync(url);
-                if (!ValidateFrontMatter(markdown))
+                var edition = GetProductEdition(markdown);
+
+                if (string.Equals(edition, "Stable", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Extract the welcome highlights and detailed feature callouts
+                    // from the Stable release notes.
+                    if (stableHighlights.Count == 0)
+                    {
+                        stableHighlights = ParseStableHighlights(markdown);
+                        stableFeatureCallouts = ParseStableFeatureCallouts(markdown);
+                        stableVersionUrl = url;
+                    }
+                    continue;
+                }
+
+                if (!string.Equals(edition, RequiredProductEdition, StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 successfulUrls++;
@@ -98,7 +116,12 @@ public partial class VSCodeReleaseNotesService
                 candidateUrls.Count,
                 successfulUrls,
                 matchedSections,
-                0);
+                0)
+            {
+                StableHighlights = stableHighlights,
+                StableFeatureCallouts = stableFeatureCallouts,
+                StableVersionUrl = stableVersionUrl
+            };
         }
 
         return new VSCodeReleaseNotesFetchResult(
@@ -109,17 +132,148 @@ public partial class VSCodeReleaseNotesService
             candidateUrls.Count,
             successfulUrls,
             matchedSections,
-            allFeatures.Count);
+            allFeatures.Count)
+        {
+            StableHighlights = stableHighlights,
+            StableFeatureCallouts = stableFeatureCallouts,
+            StableVersionUrl = stableVersionUrl
+        };
     }
 
     [GeneratedRegex(@"^##\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:,\s*(\d{4}))?", RegexOptions.IgnoreCase)]
     private static partial Regex MarkdownDateHeadingPattern();
 
-    [GeneratedRegex(@"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:,\s*(\d{4}))?", RegexOptions.IgnoreCase)]
-    private static partial Regex DatePattern();
+    [GeneratedRegex(@"^\*\s+\[([^\]]+)\]\([^)]*\):\s*(.*)", RegexOptions.IgnoreCase)]
+    private static partial Regex StableHighlightBulletPattern();
+
+    internal static List<string> ParseStableHighlights(string markdown)
+    {
+        var highlights = new List<string>();
+        var lines = markdown.Split('\n');
+        var inWelcomeSection = false;
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.TrimEnd('\r');
+
+            // Start capturing after "Welcome to the" line
+            if (line.StartsWith("Welcome to the", StringComparison.OrdinalIgnoreCase))
+            {
+                inWelcomeSection = true;
+                continue;
+            }
+
+            if (!inWelcomeSection)
+                continue;
+
+            // Stop at "Happy Coding", a horizontal rule, or a ## heading
+            if (line.StartsWith("Happy Coding", StringComparison.OrdinalIgnoreCase)
+                || line.StartsWith("---")
+                || line.StartsWith("## "))
+                break;
+
+            // Match bullets like: * [Title](#anchor): description
+            var match = StableHighlightBulletPattern().Match(line);
+            if (match.Success)
+            {
+                var title = match.Groups[1].Value.Trim();
+                var description = match.Groups[2].Value.Trim();
+                highlights.Add(string.IsNullOrWhiteSpace(description)
+                    ? title
+                    : $"{title}: {description}");
+            }
+        }
+
+        return highlights;
+    }
+
+    private const string ImageBaseUrl = "https://code.visualstudio.com/assets/updates/";
+
+    [GeneratedRegex(@"!\[([^\]]*)\]\((images/[^\)]+)\)")]
+    private static partial Regex MarkdownImagePattern();
+
+    internal static List<StableFeatureCallout> ParseStableFeatureCallouts(string markdown, int maxCallouts = 5)
+    {
+        var callouts = new List<StableFeatureCallout>();
+        var lines = markdown.Split('\n');
+        string? currentTitle = null;
+        var descriptionLines = new List<string>();
+        string? firstImageUrl = null;
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i].TrimEnd('\r');
+
+            // New ### feature heading — flush previous
+            if (line.StartsWith("### "))
+            {
+                FlushCallout(callouts, currentTitle, descriptionLines, firstImageUrl, maxCallouts);
+                currentTitle = line[4..].Trim();
+                descriptionLines.Clear();
+                firstImageUrl = null;
+                continue;
+            }
+
+            // A ## category heading resets (don't capture category-level text)
+            if (line.StartsWith("## "))
+            {
+                FlushCallout(callouts, currentTitle, descriptionLines, firstImageUrl, maxCallouts);
+                currentTitle = null;
+                descriptionLines.Clear();
+                firstImageUrl = null;
+                continue;
+            }
+
+            if (currentTitle == null)
+                continue;
+
+            // Check for image
+            var imgMatch = MarkdownImagePattern().Match(line);
+            if (imgMatch.Success && firstImageUrl == null)
+            {
+                var relativePath = imgMatch.Groups[2].Value;
+                firstImageUrl = $"{ImageBaseUrl}{relativePath["images/".Length..]}";
+                continue;
+            }
+
+            // Skip video tags, HTML comments, settings blocks, blank lines at start
+            if (line.StartsWith("<video", StringComparison.OrdinalIgnoreCase)
+                || line.StartsWith("<!--")
+                || line.StartsWith("**Setting**", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            // Collect description lines (non-empty text)
+            if (!string.IsNullOrWhiteSpace(line))
+                descriptionLines.Add(line);
+        }
+
+        FlushCallout(callouts, currentTitle, descriptionLines, firstImageUrl, maxCallouts);
+        return callouts;
+
+        static void FlushCallout(
+            List<StableFeatureCallout> callouts,
+            string? title,
+            List<string> descLines,
+            string? imageUrl,
+            int max)
+        {
+            if (title == null || callouts.Count >= max)
+                return;
+
+            // Take the first 1-3 non-empty paragraphs for a concise description
+            var description = string.Join(" ", descLines.Take(3));
+            if (string.IsNullOrWhiteSpace(description))
+                return;
+
+            callouts.Add(new StableFeatureCallout(title, description.Trim(), imageUrl));
+        }
+    }
 
     [GeneratedRegex(@"v1_(\d+)", RegexOptions.IgnoreCase)]
     private static partial Regex VersionPattern();
+
+    [GeneratedRegex(@"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:,\s*(\d{4}))?", RegexOptions.IgnoreCase)]
+    private static partial Regex DatePattern();
 
     [GeneratedRegex(@"\[#?\d+\]\((https?://[^\)]+)\)")]
     private static partial Regex MarkdownLinkPattern();
@@ -130,14 +284,17 @@ public partial class VSCodeReleaseNotesService
     [GeneratedRegex(@"\s*#\d+\s*$")]
     private static partial Regex TrailingIssueNumberPattern();
 
-    internal static bool ValidateFrontMatter(string markdown)
+    internal static bool ValidateFrontMatter(string markdown) =>
+        string.Equals(GetProductEdition(markdown), RequiredProductEdition, StringComparison.OrdinalIgnoreCase);
+
+    internal static string? GetProductEdition(string markdown)
     {
         if (!markdown.StartsWith("---"))
-            return false;
+            return null;
 
         var endIndex = markdown.IndexOf("---", 3, StringComparison.Ordinal);
         if (endIndex < 0)
-            return false;
+            return null;
 
         var frontMatter = markdown[3..endIndex];
 
@@ -147,11 +304,10 @@ public partial class VSCodeReleaseNotesService
             if (!trimmed.StartsWith("ProductEdition:", StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            var value = trimmed["ProductEdition:".Length..].Trim();
-            return string.Equals(value, RequiredProductEdition, StringComparison.OrdinalIgnoreCase);
+            return trimmed["ProductEdition:".Length..].Trim();
         }
 
-        return false;
+        return null;
     }
 
     private List<MarkdownDateSection> ParseMarkdownSections(string markdown, int defaultYear)
@@ -243,8 +399,12 @@ public partial class VSCodeReleaseNotesService
 
         if (currentVersion.HasValue)
         {
+            // Include currentVersion + 1 because the aka.ms redirect may still
+            // point to the previous version after it transitions from Insiders
+            // to Stable (e.g. v1_116 goes Stable but redirect hasn't moved to v1_117).
             var urls = new List<string>
             {
+                $"{RawGitHubBaseUrl}v1_{currentVersion.Value + 1}.md",
                 $"{RawGitHubBaseUrl}v1_{currentVersion.Value}.md",
                 $"{RawGitHubBaseUrl}v1_{currentVersion.Value - 1}.md"
             };
@@ -383,4 +543,9 @@ public sealed record VSCodeReleaseNotesFetchResult(
     int CandidateUrlCount,
     int SuccessfulUrlCount,
     int MatchedSectionCount,
-    int UniqueFeatureCount);
+    int UniqueFeatureCount)
+{
+    public List<string> StableHighlights { get; init; } = [];
+    public List<StableFeatureCallout> StableFeatureCallouts { get; init; } = [];
+    public string? StableVersionUrl { get; init; }
+}

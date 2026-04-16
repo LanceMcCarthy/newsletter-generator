@@ -473,6 +473,9 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
 
     public async Task<string> GenerateVsCodeNewsletterAsync(
         VSCodeReleaseNotes releaseNotes,
+        List<string> stableHighlights,
+        List<StableFeatureCallout> stableFeatureCallouts,
+        string? stableVersionUrl,
         List<ReleaseEntry> vscodeBlogEntries,
         List<ReleaseEntry> githubChangelogEntries,
         List<ReleaseEntry> githubBlogEntries,
@@ -487,6 +490,9 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             releaseNotes.VersionUrl,
             releaseNotes.WebsiteUrl,
             releaseNotes.Features,
+            stableHighlights,
+            stableFeatureCallouts,
+            stableVersionUrl,
             vscodeBlogEntries,
             githubChangelogEntries,
             githubBlogEntries,
@@ -494,12 +500,16 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         });
 
         var sourceHash = CacheService.GetContentHash(sourceData);
-        var cached = await cache.TryGetCachedAsync("vscode-newsletter-v2", sourceHash);
+        var cached = await cache.TryGetCachedAsync("vscode-newsletter-v4", sourceHash);
         if (cached != null)
         {
             AnsiConsole.MarkupLine("[dim]Using cached VS Code newsletter[/]");
             return cached;
         }
+
+        var stableVersion = stableVersionUrl != null
+            ? ExtractVersionFromUrl(stableVersionUrl)
+            : null;
 
         AnsiConsole.MarkupLine("[grey]Generating VS Code newsletter...[/]");
         await using var copilot = await CreateStartedSessionAsync(
@@ -522,18 +532,12 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
                     Welcome
                     --------
 
-                    <2-3 sentence factual intro paragraph>
+                    <2-3 sentence factual intro paragraph covering the week's top items across ALL sections.
+                     Mention specific version numbers, model names, or feature names.
+                     Include the most notable news/announcements alongside release highlights.
+                     This section is also used to generate the newsletter title, so lead with the biggest items.>
 
                     * * * * *
-
-                    ---
-                    ## This Week in VS Code Stable
-
-                    <Summary of stable releases shipped this week from the VS Code Blog.
-                     Use 3-6 concise bullets grouped by themes.
-                     Each bullet MUST start with a relevant emoji before the bolded title.
-                     Format: - <emoji> **Title:** description
-                     If no stable release shipped this week, omit this entire section.>
 
                     ---
                     ## News and Announcements
@@ -542,6 +546,26 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
                      Use concise paragraphs with links to source URLs.
                      Only include items directly relevant to VS Code.
                      If nothing is relevant, omit this entire section.>
+
+                    ---
+                    ## This Week in VS Code Stable
+
+                    <Summary of the stable release shipped this week.
+                     Link the version number to its release notes page.
+                     Use 5-10 concise bullets grouped by themes covering the key features.
+                     Each bullet MUST start with a relevant emoji before the bolded title.
+                     Format: - <emoji> **Title:** description
+                     Example: - 🤖 **Copilot edits preview:** inline edit suggestions now stream in real-time...
+                     Pick emojis that match the topic (e.g., 🤖 for AI, 🔧 for tools, 🖥️ for terminal, 🔒 for security)
+                     If no stable release shipped this week, omit this entire section.>
+
+                    ### 🔍 Feature Spotlight: <Feature Name>
+
+                    <Pick one feature from the stable release that has the most developer impact.
+                     Write a 2-3 sentence description of what it does and why it matters.
+                     If a feature callout with an image URL is provided in the prompt data, include the image using standard markdown syntax:
+                     ![description](image_url)
+                     If no callout data is provided or no stable release shipped, omit this subsection entirely.>
 
                     ---
                     ## VS Code Insiders Highlights (BUILD_NUMBER)
@@ -561,6 +585,23 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         var featureLines = string.Join('\n', releaseNotes.Features.Select(f =>
             $"- [{f.Category}] {f.Description}{(string.IsNullOrWhiteSpace(f.Link) ? string.Empty : $" ({f.Link})")}"));
 
+        var stableSection = stableHighlights.Count > 0
+            ? $"""
+            Stable release highlights (from the official release notes):
+            Release notes URL: {(stableVersionUrl != null ? VSCodeReleaseNotes.GetWebsiteUrlFromRawUrl(stableVersionUrl) : "N/A")}
+            Version: {stableVersion ?? "unknown"}
+            {string.Join('\n', stableHighlights.Select(h => $"- {h}"))}
+            """
+            : "No stable release notes highlights available.";
+
+        var calloutSection = stableFeatureCallouts.Count > 0
+            ? $"""
+            Stable feature callouts (pick ONE for the Feature Spotlight subsection):
+            {string.Join("\n\n", stableFeatureCallouts.Select(c =>
+                $"Feature: {c.Title}\nDescription: {c.Description}{(c.ImageUrl != null ? $"\nImage: {c.ImageUrl}" : "")}"))}
+            """
+            : "";
+
         var prompt = $"""
             Generate a weekly VS Code newsletter covering {weekStart:MMMM d} to {weekEnd:MMMM d, yyyy}.
 
@@ -569,12 +610,16 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
 
             VS Code now ships weekly Stable releases with multiple Insiders updates per week.
             Separate content into the appropriate sections:
-            - "This Week in VS Code Stable" for stable release highlights (from blog posts about stable releases)
-            - "News and Announcements" for relevant changelog/blog items that don't fit the above (e.g., model deprecations, policy changes)
+            - "News and Announcements" for relevant changelog/blog items (e.g., new models, policy changes, ecosystem updates)
+            - "This Week in VS Code Stable" for stable release highlights (use the stable release highlights below, supplemented by blog posts)
             - "VS Code Insiders Highlights ({ExtractVersionFromUrl(releaseNotes.VersionUrl)})" for Insiders-specific features (from the parsed release notes below) - the heading MUST include the build number
 
             Curate the most important developer-facing updates. Combine related items into thematic bullets.
             Omit any section that has no content.
+
+            {stableSection}
+
+            {calloutSection}
 
             Insiders release note features:
             {featureLines}
@@ -586,7 +631,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             """;
 
         var result = await SendPromptAsync(copilot.Session, prompt);
-        await cache.SaveCacheAsync("vscode-newsletter-v2", result, sourceHash);
+        await cache.SaveCacheAsync("vscode-newsletter-v4", result, sourceHash);
         return result;
     }
 

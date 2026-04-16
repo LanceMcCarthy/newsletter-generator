@@ -112,12 +112,22 @@ internal static partial class NewsletterApp
             }
         }
 
+        var stableHighlights = releaseNotesResult?.StableHighlights ?? [];
+        var stableFeatureCallouts = releaseNotesResult?.StableFeatureCallouts ?? [];
+        var stableVersionUrl = releaseNotesResult?.StableVersionUrl;
+
         metrics.SourceCounts.Add(new SourceCount(
             "VS Code Insiders",
             $"{releaseNotesResult?.CandidateUrlCount ?? 0} files",
             $"{releaseNotesResult?.MatchedSectionCount ?? 0} sections",
             $"{releaseNotesResult?.UniqueFeatureCount ?? 0} features",
             $"{releaseNotesResult?.SuccessfulUrlCount ?? 0} files parsed successfully"));
+        metrics.SourceCounts.Add(new SourceCount(
+            "VS Code Stable",
+            stableVersionUrl != null ? "1 file" : "0 files",
+            stableHighlights.Count.ToString(),
+            stableHighlights.Count.ToString(),
+            "Highlights from stable release notes"));
         metrics.SourceCounts.Add(new SourceCount(
             "VS Code Blog",
             (vscodeBlogResult?.TotalItems ?? 0).ToString(),
@@ -138,6 +148,7 @@ internal static partial class NewsletterApp
             "Posts mentioning VS Code"));
 
         if (releaseNotes == null &&
+            stableHighlights.Count == 0 &&
             vscodeMentionEntries.Count == 0 &&
             changelogVsCodeEntries.Count == 0 &&
             githubBlogVsCodeEntries.Count == 0)
@@ -167,6 +178,7 @@ internal static partial class NewsletterApp
                 ? "Release page from VS Code feed"
                 : "No release notes";
 
+        vscodeTable.AddRow("[cornflowerblue]VS Code Stable[/]", $"[green]{stableHighlights.Count}[/]", "Highlights from stable release notes");
         vscodeTable.AddRow("[cornflowerblue]VS Code Insiders[/]", $"[green]{releaseFeatures.Count}[/]", topCategories);
         vscodeTable.AddRow("[cornflowerblue]VS Code Blog[/]", $"[green]{vscodeMentionEntries.Count}[/]", "Posts mentioning VS Code");
         vscodeTable.AddRow("[cornflowerblue]GitHub Changelog[/]", $"[green]{changelogVsCodeEntries.Count}[/]", "Copilot changelog items mentioning VS Code");
@@ -192,6 +204,9 @@ internal static partial class NewsletterApp
                 sectionLabel,
                 () => newsletterService.GenerateVsCodeNewsletterAsync(
                     releaseNotes!,
+                    stableHighlights,
+                    stableFeatureCallouts,
+                    stableVersionUrl,
                     vscodeMentionEntries,
                     changelogVsCodeEntries,
                     githubBlogVsCodeEntries,

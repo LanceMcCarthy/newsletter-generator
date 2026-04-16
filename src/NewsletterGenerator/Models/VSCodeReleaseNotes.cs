@@ -8,6 +8,11 @@ public record VSCodeFeature(
     string Category,
     string? Link);
 
+public record StableFeatureCallout(
+    string Title,
+    string Description,
+    string? ImageUrl);
+
 public partial record VSCodeReleaseNotes(
     DateOnly Date,
     List<VSCodeFeature> Features,
@@ -27,5 +32,13 @@ public partial record VSCodeReleaseNotes(
                 ? $"{WebsiteBaseUrl}{match.Groups[1].Value}"
                 : VersionUrl;
         }
+    }
+
+    public static string GetWebsiteUrlFromRawUrl(string rawUrl)
+    {
+        var match = WebsiteUrlVersionPattern().Match(rawUrl);
+        return match.Success
+            ? $"{WebsiteBaseUrl}{match.Groups[1].Value}"
+            : rawUrl;
     }
 }
