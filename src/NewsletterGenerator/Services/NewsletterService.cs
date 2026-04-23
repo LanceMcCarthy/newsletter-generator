@@ -565,6 +565,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
                      Write a 2-3 sentence description of what it does and why it matters.
                      If a feature callout with an image URL is provided in the prompt data, include the image using standard markdown syntax:
                      ![description](image_url)
+                     The image URL provided is an absolute URI — use it exactly as given. Do NOT convert it to a relative path.
                      If no callout data is provided or no stable release shipped, omit this subsection entirely.>
 
                     ---
