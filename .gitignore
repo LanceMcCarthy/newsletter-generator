@@ -55,6 +55,9 @@ output/
 ## Reference materials ##
 reference/
 
+## Internal tools ##
+tools/post-to-outlook/
+
 ## Cache ##
 .cache/
 

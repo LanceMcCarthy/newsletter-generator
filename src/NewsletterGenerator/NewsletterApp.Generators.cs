@@ -16,7 +16,7 @@ internal static partial class NewsletterApp
         RunMetrics metrics,
         bool debug)
     {
-        var defaultTitle = "VS Code Weekly Newsletter";
+        var defaultTitle = "VS Code Insiders Update";
 
         var feedService = new AtomFeedService(loggerFactory.CreateLogger<AtomFeedService>(), feedCache: cache);
         var vscodeService = new VSCodeReleaseNotesService();
@@ -218,7 +218,7 @@ internal static partial class NewsletterApp
                 "Generate: VS Code newsletter");
 
             var welcomeSummary = ExtractWelcomeSummary(content);
-            var newsletterLabel = GetNewsletterLabel(NewsletterType.VSCode);
+            var newsletterLabel = "VS Code Insiders Update";
             title = await RunTrackedTaskAsync(
                 titleTask,
                 titleLabel,
