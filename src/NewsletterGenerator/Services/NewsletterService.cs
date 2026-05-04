@@ -1159,20 +1159,12 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
 
             ### {productName}
 
-            {(releases.Count > 1 ? @"<SUMMARY: 4–6 curated themed bullets spanning ALL releases this week.
-             Each bullet groups related changes under one theme.
-             Format: - <emoji> **<Short Category Label>** — <concise description combining related changes>
-             Example: - 🧠 **Models & context** — Adds Claude Opus 4.6 Fast (Preview) and 1M-token context support.
-             Emojis are ONLY used here in the summary. Do NOT use emojis in the per-release bullets below.>
-
-            " : "")}## Releases
-
             <one sub-section per version with MAXIMUM 6 bullets (ideally 3-5), highly condensed thematic summaries.
-             Do NOT use emojis in per-release bullets. Use **bold labels** only.>
-            ### vX.X.X (YYYY-MM-DD)
+             Use **bold labels** to categorize each bullet. Do NOT use emojis.>
+            #### vX.X.X (YYYY-MM-DD)
 
-            - **Category label** — Combined thematic bullet covering multiple related changes
-            - **Another label** — Another thematic bullet (e.g., "Terminal UX improvements" covering 10+ individual changes)
+            - **Category label** - Combined thematic bullet covering multiple related changes
+            - **Another label** - Another thematic bullet (e.g., "Terminal UX improvements" covering 10+ individual changes)
 
             Release notes: [Releases - github/{repoName}](https://github.com/github/{repoName}/releases)
 

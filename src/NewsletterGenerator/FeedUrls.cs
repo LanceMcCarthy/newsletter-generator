@@ -16,6 +16,7 @@ internal static class FeedUrls
     public const string AzureBlog = "https://devblogs.microsoft.com/all-things-azure/feed/";
     public const string AspireBlog = "https://devblogs.microsoft.com/aspire/feed/";
     public const string TypeScriptBlog = "https://devblogs.microsoft.com/typescript/feed/";
+    public const string AgentFrameworkBlog = "https://devblogs.microsoft.com/agent-framework/feed/";
     public const string YouTubeDotNet = "https://www.youtube.com/feeds/videos.xml?channel_id=UCvtT19MZW8dq5Wwfu6B0oxw";
     public const string YouTubeVisualStudio = "https://www.youtube.com/feeds/videos.xml?channel_id=UChqrDOwARrxdJF-ykAptc7w";
     public const string YouTubeVSCode = "https://www.youtube.com/feeds/videos.xml?channel_id=UCs5Y5_7XK8HLDX0SLNwkd3w";

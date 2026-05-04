@@ -240,6 +240,7 @@ The tool fetches from these sources:
 - **Azure Blog**: <https://devblogs.microsoft.com/all-things-azure/feed/>
 - **Aspire Blog**: <https://devblogs.microsoft.com/aspire/feed/>
 - **TypeScript Blog**: <https://devblogs.microsoft.com/typescript/feed/>
+- **Agent Framework Blog**: <https://devblogs.microsoft.com/agent-framework/feed/>
 - **YouTube channels**: .NET, Visual Studio, VS Code, GitHub, Microsoft Dev
 - **Visual Studio release notes**: <https://learn.microsoft.com/visualstudio/releases/2026/release-notes>
 

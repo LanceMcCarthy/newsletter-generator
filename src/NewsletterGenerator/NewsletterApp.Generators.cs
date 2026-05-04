@@ -374,20 +374,10 @@ internal static partial class NewsletterApp
         {
             var lines = releaseSection.Split('\n');
             var bullets = new StringBuilder();
-            bool inTLDR = false;
 
             foreach (var line in lines)
             {
-                if (line.Contains("### GitHub Copilot CLI") || line.Contains("### GitHub Copilot SDK"))
-                {
-                    inTLDR = true;
-                    continue;
-                }
-
-                if (line.StartsWith("## Releases") || line.StartsWith("---"))
-                    inTLDR = false;
-
-                if (inTLDR && line.TrimStart().StartsWith("-"))
+                if (line.TrimStart().StartsWith('-'))
                     bullets.AppendLine(line);
             }
 
@@ -536,6 +526,7 @@ internal static partial class NewsletterApp
             ("azure",       "Azure blog",            FeedUrls.AzureBlog,            true,  800,  "Blog posts"),
             ("aspire",      "Aspire blog",           FeedUrls.AspireBlog,           true,  800,  "Blog posts"),
             ("typeScript",  "TypeScript blog",       FeedUrls.TypeScriptBlog,       true,  800,  "Blog posts"),
+            ("agentFx",     "Agent Framework blog",  FeedUrls.AgentFrameworkBlog,    true,  800,  "Blog posts"),
             ("githubBlog",  "GitHub blog",           FeedUrls.GitHubBlog,           true,  800,  "Blog posts"),
             ("ytDotNet",    "YouTube .NET",          FeedUrls.YouTubeDotNet,        true,  500,  "Videos"),
             ("ytVS",        "YouTube Visual Studio", FeedUrls.YouTubeVisualStudio,  true,  500,  "Videos"),
@@ -590,6 +581,7 @@ internal static partial class NewsletterApp
         var azureBlogEntries = Entries("azure");
         var aspireBlogEntries = Entries("aspire");
         var typeScriptBlogEntries = Entries("typeScript");
+        var agentFxBlogEntries = Entries("agentFx");
         var githubBlogEntries = Entries("githubBlog");
         var youtubeDotNetEntries = Entries("ytDotNet");
         var youtubeVSEntries = Entries("ytVS");
@@ -650,7 +642,7 @@ internal static partial class NewsletterApp
 
         // Detect major releases from blog pool
         List<ReleaseEntry> blogPool = [..dotNetBlogEntries, ..devBlogEntries, ..azureBlogEntries,
-            ..aspireBlogEntries, ..typeScriptBlogEntries, ..githubBlogEntries];
+            ..aspireBlogEntries, ..typeScriptBlogEntries, ..agentFxBlogEntries, ..githubBlogEntries];
         var majorReleases = NewsletterService.DetectMajorReleases(blogPool);
         var majorReleaseTitles = majorReleases.Select(e => e.Version).ToList();
 
