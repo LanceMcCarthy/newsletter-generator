@@ -25,7 +25,19 @@ internal sealed class RunMetrics
     public bool ClipboardSucceeded { get; set; }
     public NewsletterType Newsletter { get; set; } = NewsletterType.CopilotCliSdk;
     public string Model { get; set; } = string.Empty;
+    public List<CopilotUsageMetric> CopilotUsage { get; } = [];
 }
+
+internal sealed record CopilotUsageMetric(
+    string Operation,
+    string SessionId,
+    string? MessageId,
+    int PromptCharacters,
+    int OutputCharacters,
+    long? InputTokens,
+    long? OutputTokens,
+    long? TotalTokens,
+    DateTimeOffset CapturedAtUtc);
 
 internal sealed record PreviewSection(string Heading, IReadOnlyList<string> Items);
 
@@ -43,6 +55,10 @@ internal sealed class AggregateRunMetrics
     public int WarningCount { get; private set; }
     public double TotalWallSeconds { get; private set; }
     public double AverageWallSeconds => TotalRuns == 0 ? 0 : TotalWallSeconds / TotalRuns;
+    public int CopilotPromptCount { get; private set; }
+    public long CopilotInputTokens { get; private set; }
+    public long CopilotOutputTokens { get; private set; }
+    public long CopilotTotalTokens { get; private set; }
 
     public void AddRun(RunMetrics metrics)
     {
@@ -60,6 +76,11 @@ internal sealed class AggregateRunMetrics
         OutputLines += metrics.OutputLines;
         WarningCount += metrics.Warnings.Count;
         TotalWallSeconds += metrics.TotalWallSeconds;
+
+        CopilotPromptCount += metrics.CopilotUsage.Count;
+        CopilotInputTokens += metrics.CopilotUsage.Sum(m => m.InputTokens ?? 0);
+        CopilotOutputTokens += metrics.CopilotUsage.Sum(m => m.OutputTokens ?? 0);
+        CopilotTotalTokens += metrics.CopilotUsage.Sum(m => m.TotalTokens ?? 0);
     }
 }
 

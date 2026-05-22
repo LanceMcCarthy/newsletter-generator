@@ -147,7 +147,7 @@ public class AtomFeedServiceTests
     [InlineData("csharp", "C#")]
     [InlineData("typescript", "TypeScript")]
     [InlineData("javascript", "JavaScript")]
-    [InlineData("rust", "rust")]
+    [InlineData("rust", "Rust")]
     public void FormatLangLabel_MapsCorrectly(string input, string expected)
     {
         Assert.Equal(expected, AtomFeedService.FormatLangLabel(input));
