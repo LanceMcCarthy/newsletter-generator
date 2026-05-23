@@ -174,6 +174,7 @@ internal static partial class NewsletterApp
                             revisionRequest,
                             GetNewsletterLabel(selectedNewsletter),
                             selectedModel);
+                        metrics.CopilotUsage.AddRange(newsletterService.GetUsageMetricsSnapshot());
                         content = NormalizeDashes(content);
                         revisionStopwatch.Stop();
 
@@ -477,7 +478,7 @@ internal static partial class NewsletterApp
         double CliSeconds,
         bool IsAuthenticated,
         string AuthStatus,
-        List<ModelInfo>? Models,
+        IList<ModelInfo>? Models,
         string SdkStatus,
         string PingStatus,
         double SdkSeconds,
@@ -535,7 +536,7 @@ internal static partial class NewsletterApp
             double cliSeconds = 0;
             bool isAuthenticated = false;
             string authStatus = "Unknown", sdkStatus = "Unknown", pingStatus = "Unknown";
-            List<ModelInfo>? models = null;
+            IList<ModelInfo>? models = null;
             double sdkSeconds = 0;
             string? sdkError = null;
 
@@ -564,7 +565,7 @@ internal static partial class NewsletterApp
     /// <summary>
     /// Awaits the pre-started startup task, records metrics, and renders the status table.
     /// </summary>
-    private static async Task<List<ModelInfo>?> FinishCopilotStartupAsync(
+    private static async Task<IList<ModelInfo>?> FinishCopilotStartupAsync(
         Task<CopilotStartupResult> startupTask,
         RunMetrics? metrics = null)
     {
@@ -608,7 +609,7 @@ internal static partial class NewsletterApp
         return result.Models;
     }
 
-    public static async Task<List<ModelInfo>?> PrintCopilotStartupStatusAsync(RunMetrics? metrics = null)
+    public static async Task<IList<ModelInfo>?> PrintCopilotStartupStatusAsync(RunMetrics? metrics = null)
     {
         var task = StartCopilotStartupAsync();
         return await FinishCopilotStartupAsync(task, metrics);
@@ -682,7 +683,7 @@ internal static partial class NewsletterApp
         return value.Length <= max ? value : value[..max] + "...";
     }
 
-    private static async Task<string> SelectModelAsync(string? modelArg, List<ModelInfo>? cachedModels, bool nonInteractive)
+    private static async Task<string> SelectModelAsync(string? modelArg, IList<ModelInfo>? cachedModels, bool nonInteractive)
     {
         if (!string.IsNullOrWhiteSpace(modelArg))
             return modelArg.Trim();
@@ -694,7 +695,7 @@ internal static partial class NewsletterApp
 
         try
         {
-            var models = cachedModels;
+            var models = cachedModels?.ToList();
 
             if (models == null || models.Count == 0)
             {
@@ -710,7 +711,7 @@ internal static partial class NewsletterApp
                         task.Increment(40);
                         await client.StartAsync();
                         task.Increment(30);
-                        models = await client.ListModelsAsync();
+                        models = (await client.ListModelsAsync()).ToList();
                         task.Increment(30);
                         SetTaskInactive(task, taskLabel);
                     });

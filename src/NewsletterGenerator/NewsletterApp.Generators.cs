@@ -231,6 +231,8 @@ internal static partial class NewsletterApp
                 "Generate: Newsletter title");
         });
 
+            metrics.CopilotUsage.AddRange(newsletterService.GetUsageMetricsSnapshot());
+
         if (string.IsNullOrWhiteSpace(content))
         {
             AnsiConsole.MarkupLine("[yellow]⚠[/] Empty VS Code newsletter result.");
@@ -469,6 +471,8 @@ internal static partial class NewsletterApp
                 RenderFriendlyException(ex, debug);
             }
         });
+
+        metrics.CopilotUsage.AddRange(newsletterService.GetUsageMetricsSnapshot());
 
         if (string.IsNullOrEmpty(releaseSection))
         {
@@ -757,6 +761,8 @@ internal static partial class NewsletterApp
                     welcomeSummary, newsletterLabel, cache, selectedModel),
                 metrics, "Generate: Newsletter title");
         });
+
+            metrics.CopilotUsage.AddRange(newsletterService.GetUsageMetricsSnapshot());
 
         // Assemble final content
         var contentBuilder = new StringBuilder();

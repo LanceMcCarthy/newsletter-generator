@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using NewsletterGenerator;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.Logging;
 using NewsletterGenerator.Models;
@@ -9,6 +10,16 @@ namespace NewsletterGenerator.Services;
 public partial class NewsletterService(ILogger<NewsletterService> logger)
 {
     private const string CopilotClientName = "newsletter-generator";
+    private readonly object usageLock = new();
+    private readonly List<CopilotUsageMetric> usageMetrics = [];
+
+    internal IReadOnlyList<CopilotUsageMetric> GetUsageMetricsSnapshot()
+    {
+        lock (usageLock)
+        {
+            return usageMetrics.ToList();
+        }
+    }
 
     private sealed class StartedSession(CopilotClient client, CopilotSession session) : IAsyncDisposable
     {
@@ -160,7 +171,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             Generate ONLY the paragraph text (no markdown, no greeting).
             """;
 
-        var result = await SendPromptAsync(copilot.Session, prompt);
+        var result = await SendPromptAsync(copilot.Session, prompt, "Welcome summary");
         logger.LogInformation("Welcome summary generated ({Length} chars)", result.Length);
         logger.LogDebug("Welcome summary content:\n{Content}", result);
 
@@ -218,7 +229,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             - {newsletterLabel} - Claude Sonnet 4.6 GA, Cross-Session Memory, Infinite Sessions, and more!
             """;
 
-        var result = await SendPromptAsync(copilot.Session, prompt);
+        var result = await SendPromptAsync(copilot.Session, prompt, "Newsletter title");
         result = result.Trim().Trim('"').Trim();
         logger.LogInformation("Newsletter title generated: {Title}", result);
 
@@ -294,7 +305,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
                     """);
 
         var prompt = BuildNewsPrompt(changelogEntries, blogEntries, weekStart, weekEnd);
-        var result = await SendPromptAsync(copilot.Session, prompt);
+        var result = await SendPromptAsync(copilot.Session, prompt, "News and Announcements");
         logger.LogInformation("News section generated ({Length} chars)", result.Length);
         logger.LogDebug("News section content:\n{Content}", result);
 
@@ -377,7 +388,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
                         - Start directly with the section header (### GitHub Copilot CLI or ### GitHub Copilot SDK)
                         """);
 
-            result = await SendPromptAsync(copilot.Session, prompt);
+            result = await SendPromptAsync(copilot.Session, prompt, $"{productName} summary (attempt {attempt})");
             logger.LogInformation("{Product} attempt {Attempt}: {Length} chars", productName, attempt, result.Length);
 
             if (!string.IsNullOrWhiteSpace(result))
@@ -466,7 +477,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             ```
             """;
 
-        var result = await SendPromptAsync(copilot.Session, prompt);
+        var result = await SendPromptAsync(copilot.Session, prompt, "Revision");
         logger.LogInformation("Revised newsletter markdown generated ({Length} chars)", result.Length);
         return result;
     }
@@ -631,7 +642,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             Generate ONLY the final Markdown newsletter content.
             """;
 
-        var result = await SendPromptAsync(copilot.Session, prompt);
+        var result = await SendPromptAsync(copilot.Session, prompt, "VS Code newsletter");
         await cache.SaveCacheAsync("vscode-newsletter-v4", result, sourceHash);
         return result;
     }
@@ -704,7 +715,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
 
         AnsiConsole.MarkupLine($"[grey]Generating {Markup.Escape(displayLabel)}...[/]");
         await using var copilot = await CreateStartedSessionAsync(model, systemMessage);
-        var result = await SendPromptAsync(copilot.Session, prompt);
+        var result = await SendPromptAsync(copilot.Session, prompt, displayLabel);
         await cache.SaveCacheAsync(cacheKey, result, sourceHash);
         return result;
     }
@@ -727,6 +738,13 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
 
             Write one summary sentence followed by 3-5 bullets covering the most important changes.
             Each bullet: - **[Short label](url)** - description.
+
+            SDK LANGUAGE NOTES:
+            - The Copilot SDK ships for Go, .NET/C#, TypeScript, Python, and Rust.
+            - Language-specific release tags (e.g., "rust/v1.0.0-beta.4") contain changes for that language.
+              Give each language with notable changes its own bullet when space allows.
+            - Do NOT describe language-specific tags as "first release" or "initial release" unless you
+              have explicit evidence. Earlier betas may already include that language.
 
             Output exactly this format:
 
@@ -1071,9 +1089,9 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             prompt, cache, model, "DevTech Welcome section");
     }
 
-    private async Task<string> SendPromptAsync(CopilotSession session, string prompt)
+    private async Task<string> SendPromptAsync(CopilotSession session, string prompt, string operation)
     {
-        logger.LogDebug("SendPromptAsync: sending prompt ({Length} chars)", prompt.Length);
+        logger.LogDebug("SendPromptAsync: sending prompt for {Operation} ({Length} chars)", operation, prompt.Length);
         var response = new StringBuilder();
         var eventCount = 0;
         var streamedChars = 0;
@@ -1119,14 +1137,147 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             }
         });
 
-        await session.SendAsync(new MessageOptions { Prompt = prompt });
+        var messageId = await session.SendAsync(new MessageOptions { Prompt = prompt });
         var result = await tcs.Task;
         logger.LogInformation("SendPromptAsync: received response ({Length} chars, empty={IsEmpty}, events={Events}, streamedChars={StreamedChars})",
             result.Length, string.IsNullOrWhiteSpace(result), eventCount, streamedChars);
+        await TryCaptureUsageMetricsAsync(session, operation, prompt.Length, result.Length, messageId);
         if (string.IsNullOrWhiteSpace(result))
             logger.LogWarning("SendPromptAsync: AI returned empty response for prompt starting with: {PromptStart}",
                 prompt.Length > 200 ? prompt[..200] : prompt);
         return result;
+    }
+
+    private async Task TryCaptureUsageMetricsAsync(
+        CopilotSession session,
+        string operation,
+        int promptCharacters,
+        int outputCharacters,
+        string? messageId)
+    {
+        try
+        {
+            var usage = await session.Rpc.Usage.GetMetricsAsync();
+            var inputTokens = ExtractTokenCount(usage, "InputTokens", "PromptTokens");
+            var outputTokens = ExtractTokenCount(usage, "OutputTokens", "CompletionTokens");
+            var totalTokens = ExtractTokenCount(usage, "TotalTokens", "Tokens");
+
+            var metric = new CopilotUsageMetric(
+                operation,
+                session.SessionId,
+                messageId,
+                promptCharacters,
+                outputCharacters,
+                inputTokens,
+                outputTokens,
+                totalTokens,
+                DateTimeOffset.UtcNow);
+
+            lock (usageLock)
+            {
+                usageMetrics.Add(metric);
+            }
+
+            logger.LogInformation(
+                "Copilot usage captured for {Operation}: in={InputTokens}, out={OutputTokens}, total={TotalTokens}",
+                operation,
+                inputTokens?.ToString() ?? "n/a",
+                outputTokens?.ToString() ?? "n/a",
+                totalTokens?.ToString() ?? "n/a");
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Could not capture usage metrics for {Operation}", operation);
+        }
+    }
+
+    private static long? ExtractTokenCount(object? usage, params string[] candidatePropertyNames)
+    {
+        if (usage is null)
+            return null;
+
+        static bool IsCandidateName(string source, string target)
+        {
+            var normalizedSource = source.Replace("_", string.Empty, StringComparison.Ordinal);
+            var normalizedTarget = target.Replace("_", string.Empty, StringComparison.Ordinal);
+            return normalizedSource.Equals(normalizedTarget, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var queue = new Queue<(object Value, int Depth)>();
+        queue.Enqueue((usage, 0));
+
+        while (queue.Count > 0)
+        {
+            var (value, depth) = queue.Dequeue();
+            var properties = value.GetType().GetProperties();
+
+            foreach (var property in properties)
+            {
+                object? propertyValue;
+                try
+                {
+                    propertyValue = property.GetValue(value);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (propertyValue is null)
+                    continue;
+
+                if (candidatePropertyNames.Any(name => IsCandidateName(property.Name, name))
+                    && TryConvertToLong(propertyValue, out var tokenCount))
+                {
+                    return tokenCount;
+                }
+
+                if (depth >= 1)
+                    continue;
+
+                var propertyType = propertyValue.GetType();
+                if (propertyType.IsPrimitive || propertyType == typeof(string) || propertyType.IsEnum)
+                    continue;
+
+                queue.Enqueue((propertyValue, depth + 1));
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryConvertToLong(object value, out long converted)
+    {
+        switch (value)
+        {
+            case byte b:
+                converted = b;
+                return true;
+            case short s:
+                converted = s;
+                return true;
+            case int i:
+                converted = i;
+                return true;
+            case long l:
+                converted = l;
+                return true;
+            case float f:
+                converted = (long)f;
+                return true;
+            case double d:
+                converted = (long)d;
+                return true;
+            case decimal dec:
+                converted = (long)dec;
+                return true;
+            case string str when long.TryParse(str, out var parsed):
+                converted = parsed;
+                return true;
+            default:
+                converted = 0;
+                return false;
+        }
     }
 
     private static string BuildProductPrompt(
@@ -1152,6 +1303,16 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             - Skip bug fixes, internal improvements, and minor polish unless groundbreaking
             - Focus on new capabilities and major workflow changes only
             - If a release has 20+ changes, combine them into 3-5 thematic bullets
+
+            SDK LANGUAGE COVERAGE (applies only to multi-language SDK releases):
+            - The SDK ships for multiple languages (Go, .NET/C#, TypeScript, Python, Rust).
+            - When the source material includes language-specific changelog sections (e.g., "Rust changes:"),
+              ensure each language with notable additions gets at least one bullet or explicit mention.
+            - Language-specific version tags (e.g., "rust-v0.1.0") represent the first standalone package
+              publish for that language. Mention them, but do NOT call them "first public release" or
+              "initial release" — earlier beta releases already included that language.
+            - Do NOT collapse all language-specific changes into a single generic "across all SDKs" bullet
+              when the changes differ meaningfully per language.
 
             Pick the 4–6 most impactful developer-facing highlights for the week.
 

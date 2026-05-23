@@ -302,7 +302,7 @@ public partial class AtomFeedService(ILogger<AtomFeedService> logger, HttpClient
         // Categorize all entries
         var fullReleases = new List<ReleaseEntry>();               // e.g., v0.1.25
         var prefixedFullReleases = new List<(ReleaseEntry Entry, string Lang, string Version)>(); // e.g., go/v0.1.25
-        var prereleases = new List<(ReleaseEntry Entry, string? Lang, string BaseVersion)>();      // e.g., go/v0.1.25-preview.0
+        var prereleases = new List<(ReleaseEntry Entry, string? Lang, string BaseVersion, string FullVersion)>(); // e.g., go/v0.1.25-preview.0
         var rolledUpPrereleases = new List<ConsolidatedPrerelease>();
         var skippedPrereleases = new List<string>();
 
@@ -324,7 +324,7 @@ public partial class AtomFeedService(ILogger<AtomFeedService> logger, HttpClient
             var preMatch = RePrereleaseVersion().Match(version);
             if (preMatch.Success)
             {
-                prereleases.Add((release, lang, preMatch.Groups["base"].Value));
+                prereleases.Add((release, lang, preMatch.Groups["base"].Value, version));
             }
             else if (lang != null)
             {
@@ -360,7 +360,9 @@ public partial class AtomFeedService(ILogger<AtomFeedService> logger, HttpClient
         }
 
         // Merge prereleases into the matching full release
-        foreach (var (prerelease, lang, baseVersion) in prereleases)
+        var orphanPrereleases = new List<(ReleaseEntry Entry, string? Lang, string BaseVersion, string FullVersion)>();
+
+        foreach (var (prerelease, lang, baseVersion, fullVersion) in prereleases)
         {
             if (string.IsNullOrWhiteSpace(prerelease.PlainText))
             {
@@ -381,11 +383,24 @@ public partial class AtomFeedService(ILogger<AtomFeedService> logger, HttpClient
                 fullReleases[fullIndex] = full with { PlainText = mergedText };
                 rolledUpPrereleases.Add(new ConsolidatedPrerelease(full.Version, normalizedPreVersion));
             }
-            // Orphan prerelease — no matching full release, drop it
             else
             {
-                skippedPrereleases.Add(ExtractVersionTag(prerelease.Version));
+                orphanPrereleases.Add((prerelease, lang, baseVersion, fullVersion));
             }
+        }
+
+        // Promote orphan prereleases: when no full release exists for a base version,
+        // each orphan becomes its own standalone release entry. Language-prefixed
+        // orphans are kept separate so the AI can give each language proper coverage.
+        foreach (var (entry, lang, _, _) in orphanPrereleases)
+        {
+            if (string.IsNullOrWhiteSpace(entry.PlainText))
+            {
+                skippedPrereleases.Add(ExtractVersionTag(entry.Version));
+                continue;
+            }
+
+            fullReleases.Add(entry);
         }
 
         return new PrereleaseConsolidationResult(
@@ -401,6 +416,7 @@ public partial class AtomFeedService(ILogger<AtomFeedService> logger, HttpClient
             "python" => "Python",
             "dotnet" or ".net" => ".NET",
             "csharp" or "cs" => "C#",
+            "rust" => "Rust",
             "typescript" or "ts" => "TypeScript",
             "javascript" or "js" => "JavaScript",
             _ => lang

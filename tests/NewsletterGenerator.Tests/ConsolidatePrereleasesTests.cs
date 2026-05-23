@@ -28,7 +28,7 @@ public class ConsolidatePrereleasesTests
     }
 
     [Fact]
-    public void OrphanPrerelease_IsDropped()
+    public void OrphanPrerelease_IsPromotedAsStandalone()
     {
         var releases = new List<ReleaseEntry>
         {
@@ -38,8 +38,10 @@ public class ConsolidatePrereleasesTests
 
         var result = AtomFeedService.ConsolidatePrereleases(releases);
 
-        Assert.Single(result);
+        Assert.Equal(2, result.Count);
         Assert.Equal("v0.1.25", result[0].Version);
+        Assert.Equal("v0.1.26-preview.0", result[1].Version);
+        Assert.Contains("Orphan preview", result[1].PlainText);
     }
 
     [Fact]
@@ -75,7 +77,7 @@ public class ConsolidatePrereleasesTests
     }
 
     [Fact]
-    public void LangPrefixedOrphanPrerelease_IsDropped()
+    public void LangPrefixedOrphanPrerelease_IsPromotedAsStandalone()
     {
         var releases = new List<ReleaseEntry>
         {
@@ -85,8 +87,10 @@ public class ConsolidatePrereleasesTests
 
         var result = AtomFeedService.ConsolidatePrereleases(releases);
 
-        Assert.Single(result);
+        Assert.Equal(2, result.Count);
         Assert.Equal("v0.1.25", result[0].Version);
+        Assert.Equal("go/v0.1.26-preview.0: Add E2E tests", result[1].Version);
+        Assert.Contains("E2E content", result[1].PlainText);
     }
 
     [Fact]
@@ -151,17 +155,16 @@ public class ConsolidatePrereleasesTests
 
         var result = AtomFeedService.ConsolidatePrereleases(releases);
 
-        // Should have 2 full releases: v0.1.25 and v0.1.24
-        Assert.Equal(2, result.Count);
+        // Should have 3 releases: v0.1.25, v0.1.24, and the orphan go/v0.1.26-preview.0 (promoted)
+        Assert.Equal(3, result.Count);
         Assert.Equal("v0.1.25", result[0].Version);
         Assert.Equal("v0.1.24", result[1].Version);
 
         // go/v0.1.25-preview.0 content should be merged into v0.1.25
         Assert.Contains("MCP env fix", result[0].PlainText);
 
-        // go/v0.1.26-preview.0 should be dropped (orphan)
-        Assert.DoesNotContain("E2E content", result[0].PlainText);
-        Assert.DoesNotContain("E2E content", result[1].PlainText);
+        // go/v0.1.26-preview.0 is promoted as standalone (orphan with content)
+        Assert.Contains("E2E content", result[2].PlainText);
     }
 
     [Fact]
@@ -303,7 +306,7 @@ public class ConsolidatePrereleasesTests
     }
 
     [Fact]
-    public void NumericSuffixOrphanPrerelease_IsDropped()
+    public void NumericSuffixOrphanPrerelease_IsPromoted()
     {
         var releases = new List<ReleaseEntry>
         {
@@ -313,9 +316,10 @@ public class ConsolidatePrereleasesTests
 
         var result = AtomFeedService.ConsolidatePrereleases(releases);
 
-        Assert.Single(result);
+        Assert.Equal(2, result.Count);
         Assert.Equal("0.0.420", result[0].Version);
-        Assert.DoesNotContain("Orphan preview build", result[0].PlainText);
+        Assert.Equal("0.0.421-0", result[1].Version);
+        Assert.Contains("Orphan preview build", result[1].PlainText);
     }
 
     [Fact]
@@ -342,7 +346,7 @@ public class ConsolidatePrereleasesTests
     }
 
     [Fact]
-    public void AllOrphanPrereleases_ReturnsEmpty()
+    public void AllOrphanPrereleases_ArePromoted()
     {
         var releases = new List<ReleaseEntry>
         {
@@ -353,7 +357,10 @@ public class ConsolidatePrereleasesTests
 
         var result = AtomFeedService.ConsolidatePrereleases(releases);
 
-        Assert.Empty(result);
+        Assert.Equal(3, result.Count);
+        Assert.Contains("Orphan one", result[0].PlainText);
+        Assert.Contains("Orphan two", result[1].PlainText);
+        Assert.Contains("Orphan three", result[2].PlainText);
     }
 
     [Fact]
@@ -374,5 +381,39 @@ public class ConsolidatePrereleasesTests
         Assert.Equal("v0.1.25", result[1].Version);
         Assert.Equal("v0.1.26", result[2].Version);
         Assert.Contains("Preview for first", result[1].PlainText);
+    }
+
+    [Fact]
+    public void BetaOnlyReleases_WithRustPrefix_PromotesEachAsStandalone()
+    {
+        // Mirrors the current SDK feed: all releases are betas, Rust has its own tag
+        var releases = new List<ReleaseEntry>
+        {
+            Entry("v1.0.0-beta.4", "Typed Go union interfaces and experimental schema annotations"),
+            Entry("rust/v1.0.0-beta.4", "Rust SDK changelog for beta.4"),
+            Entry("v1.0.0-beta.3", "Mode handler APIs and SDK tracing diagnostics"),
+            Entry("v1.0.0-beta.2", "Remote session support"),
+            Entry("rust-v0.1.0", "Initial Rust SDK release"),
+        };
+
+        var result = AtomFeedService.ConsolidatePrereleases(releases);
+
+        // rust-v0.1.0 is a full release (no prerelease suffix, dash doesn't match lang prefix regex)
+        // All betas (including rust/v1.0.0-beta.4) are promoted as separate standalone entries
+        Assert.Equal(5, result.Count);
+        Assert.Equal("rust-v0.1.0", result[0].Version);
+
+        var beta4 = result.First(r => r.Version == "v1.0.0-beta.4");
+        Assert.Contains("Typed Go union interfaces", beta4.PlainText);
+        Assert.DoesNotContain("Rust SDK changelog for beta.4", beta4.PlainText);
+
+        var rustBeta4 = result.First(r => r.Version == "rust/v1.0.0-beta.4");
+        Assert.Contains("Rust SDK changelog for beta.4", rustBeta4.PlainText);
+
+        var beta3 = result.First(r => r.Version == "v1.0.0-beta.3");
+        Assert.Contains("Mode handler APIs", beta3.PlainText);
+
+        var beta2 = result.First(r => r.Version == "v1.0.0-beta.2");
+        Assert.Contains("Remote session support", beta2.PlainText);
     }
 }
