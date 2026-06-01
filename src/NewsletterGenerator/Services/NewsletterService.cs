@@ -75,7 +75,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         OnPermissionRequest = DenyUnexpectedPermissionRequest,
         Model = model,
         Streaming = true,
-        ReasoningEffort = "low",
+        ReasoningEffort = null,
         Hooks = CreateSessionHooks(),
         SystemMessage = new SystemMessageConfig
         {
@@ -327,7 +327,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         if (releases.Count == 0)
         {
             logger.LogInformation("{Product}: no releases this week", productName);
-            return $"### {productName}\n\n_No new releases this week._\n";
+            return $"## {productName} Updates\n\n_No new releases this week._\n";
         }
 
         // Check cache first
@@ -385,7 +385,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
                         OUTPUT REQUIREMENTS:
                         - Output ONLY the requested Markdown — no preamble, no commentary, no code fences
                         - Do NOT include meta-statements like "Here are the highlights" or "Based on my analysis"
-                        - Start directly with the section header (### GitHub Copilot CLI or ### GitHub Copilot SDK)
+                        - Start directly with the section header (## GitHub Copilot CLI Updates or ## GitHub Copilot SDK Updates)
                         """);
 
             result = await SendPromptAsync(copilot.Session, prompt, $"{productName} summary (attempt {attempt})");
@@ -424,14 +424,9 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         var sdkSummary = await GenerateProductReleaseAsync("GitHub Copilot SDK", sdkReleases, weekStart, weekEnd, cache, model);
         logger.LogInformation("SDK summary result: {Length} chars, empty={IsEmpty}", sdkSummary.Length, string.IsNullOrWhiteSpace(sdkSummary));
 
-        // Combine into final section
+        // Combine into final sections (two top-level H2 headings, no wrapper)
         var sb = new StringBuilder();
-        sb.AppendLine("---");
-        sb.AppendLine("## Project updates");
-        sb.AppendLine();
         sb.Append(cliSummary);
-        sb.AppendLine();
-        sb.AppendLine("---");
         sb.AppendLine();
         sb.Append(sdkSummary);
 
@@ -1318,11 +1313,11 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
 
             Output ONLY the Markdown below (no extra text). Follow this exact structure:
 
-            ### {productName}
+            ## {productName} Updates
 
             <one sub-section per version with MAXIMUM 6 bullets (ideally 3-5), highly condensed thematic summaries.
              Use **bold labels** to categorize each bullet. Do NOT use emojis.>
-            #### vX.X.X (YYYY-MM-DD)
+            ### vX.X.X (YYYY-MM-DD)
 
             - **Category label** - Combined thematic bullet covering multiple related changes
             - **Another label** - Another thematic bullet (e.g., "Terminal UX improvements" covering 10+ individual changes)

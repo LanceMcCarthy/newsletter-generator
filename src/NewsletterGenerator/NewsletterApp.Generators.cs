@@ -231,7 +231,7 @@ internal static partial class NewsletterApp
                 "Generate: Newsletter title");
         });
 
-            metrics.CopilotUsage.AddRange(newsletterService.GetUsageMetricsSnapshot());
+        metrics.CopilotUsage.AddRange(newsletterService.GetUsageMetricsSnapshot());
 
         if (string.IsNullOrWhiteSpace(content))
         {
@@ -394,7 +394,7 @@ internal static partial class NewsletterApp
         await AnsiConsole.Progress().AutoClear(false).HideCompleted(false).StartAsync(async ctx =>
         {
             const string newsLabel = "News and announcements";
-            const string releaseLabel = "Project updates";
+            const string releaseLabel = "CLI & SDK updates";
             const string welcomeLabel = "Welcome summary";
             const string titleLabel = "Newsletter title";
 
@@ -431,7 +431,7 @@ internal static partial class NewsletterApp
                     cache,
                     selectedModel),
                     metrics,
-                    "Generate: Project updates");
+                    "Generate: CLI & SDK updates");
 
                 await Task.WhenAll(newsSectionTask, releaseSectionTask);
 
@@ -493,7 +493,11 @@ internal static partial class NewsletterApp
 
         if (!string.IsNullOrEmpty(newsSection))
         {
-            contentBuilder.AppendLine(newsSection);
+            // Strip trailing --- that AI may add (the assembler handles separators)
+            var trimmedNews = newsSection.TrimEnd();
+            if (trimmedNews.EndsWith("---"))
+                trimmedNews = trimmedNews[..^3].TrimEnd();
+            contentBuilder.AppendLine(trimmedNews);
             contentBuilder.AppendLine();
             contentBuilder.AppendLine("* * * * *");
             contentBuilder.AppendLine();
@@ -762,7 +766,7 @@ internal static partial class NewsletterApp
                 metrics, "Generate: Newsletter title");
         });
 
-            metrics.CopilotUsage.AddRange(newsletterService.GetUsageMetricsSnapshot());
+        metrics.CopilotUsage.AddRange(newsletterService.GetUsageMetricsSnapshot());
 
         // Assemble final content
         var contentBuilder = new StringBuilder();
