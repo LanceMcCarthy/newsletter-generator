@@ -155,6 +155,7 @@ internal static partial class NewsletterApp
             {
                 content = PrefixNewsletterName(content, title, weekStartDate, weekEndDate, selectedModel);
                 content = NormalizeDashes(content);
+                content = RemoveReleaseNotesHrules(content);
 
                 if (!nonInteractive)
                 {
@@ -176,6 +177,7 @@ internal static partial class NewsletterApp
                             selectedModel);
                         metrics.CopilotUsage.AddRange(newsletterService.GetUsageMetricsSnapshot());
                         content = NormalizeDashes(content);
+                        content = RemoveReleaseNotesHrules(content);
                         revisionStopwatch.Stop();
 
                         metrics.StageSeconds["Apply revisions"] =
@@ -469,6 +471,36 @@ internal static partial class NewsletterApp
 
     private static string NormalizeDashes(string text)
         => text.Replace('\u2014', '-').Replace('\u2013', '-');
+
+    /// <summary>
+    /// Removes stray "---" horizontal rules that appear on the line immediately
+    /// after a "Release notes:" link, which downstream parsers misinterpret as
+    /// a setext-style H2 heading.
+    /// </summary>
+    private static string RemoveReleaseNotesHrules(string text)
+    {
+        var lines = text.Split('\n');
+        var result = new List<string>(lines.Length);
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            // If this line is "---" and the previous non-empty line starts with "Release notes:",
+            // skip this line.
+            if (lines[i].Trim() == "---" && i > 0)
+            {
+                var prev = i - 1;
+                while (prev >= 0 && string.IsNullOrWhiteSpace(lines[prev]))
+                    prev--;
+
+                if (prev >= 0 && lines[prev].TrimStart().StartsWith("Release notes:", StringComparison.Ordinal))
+                    continue;
+            }
+
+            result.Add(lines[i]);
+        }
+
+        return string.Join('\n', result);
+    }
 
     // ── Copilot startup & model selection ───────────────────────────────────
 
