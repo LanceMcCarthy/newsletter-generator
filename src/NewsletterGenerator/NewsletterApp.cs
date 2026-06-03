@@ -162,6 +162,9 @@ internal static partial class NewsletterApp
                     RenderGeneratedPreview(selectedNewsletter, content);
 
                     var revisionPassCount = 0;
+                    await using var newsletterService = new NewsletterService(
+                        loggerFactory.CreateLogger<NewsletterService>(),
+                        useInfiniteSessionsForRevisions: settings.InfiniteSessions);
                     while (true)
                     {
                         var revisionRequest = PromptForRevisionRequest(revisionPassCount > 0);
@@ -169,7 +172,6 @@ internal static partial class NewsletterApp
                             break;
 
                         var revisionStopwatch = Stopwatch.StartNew();
-                        var newsletterService = new NewsletterService(loggerFactory.CreateLogger<NewsletterService>());
                         content = await newsletterService.ReviseNewsletterMarkdownAsync(
                             content,
                             revisionRequest,
