@@ -7,6 +7,9 @@ namespace NewsletterGenerator;
 
 internal static partial class NewsletterApp
 {
+    private static string BuildRunContextKey(NewsletterType newsletterType, DateOnly weekStart, DateOnly weekEnd)
+        => $"{newsletterType}:{weekStart:yyyy-MM-dd}:{weekEnd:yyyy-MM-dd}";
+
     private static async Task<(string? Content, string Title)> GenerateVsCodeNewsletterAsync(
         DateOnly weekStart,
         DateOnly weekEnd,
@@ -187,7 +190,9 @@ internal static partial class NewsletterApp
         AnsiConsole.Write(vscodeTable);
         AnsiConsole.WriteLine();
 
-        var newsletterService = new NewsletterService(loggerFactory.CreateLogger<NewsletterService>());
+        var newsletterService = new NewsletterService(
+            loggerFactory.CreateLogger<NewsletterService>(),
+            BuildRunContextKey(NewsletterType.VSCode, weekStart, weekEnd));
         string content = string.Empty;
         string title = defaultTitle;
 
@@ -390,7 +395,9 @@ internal static partial class NewsletterApp
         string releaseSection = string.Empty;
         string welcomeSummary = string.Empty;
 
-        var newsletterService = new NewsletterService(loggerFactory.CreateLogger<NewsletterService>());
+        var newsletterService = new NewsletterService(
+            loggerFactory.CreateLogger<NewsletterService>(),
+            BuildRunContextKey(NewsletterType.CopilotCliSdk, weekStart, weekEnd));
         await AnsiConsole.Progress().AutoClear(false).HideCompleted(false).StartAsync(async ctx =>
         {
             const string newsLabel = "News and announcements";
@@ -646,7 +653,9 @@ internal static partial class NewsletterApp
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
 
-        var newsletterService = new NewsletterService(loggerFactory.CreateLogger<NewsletterService>());
+        var newsletterService = new NewsletterService(
+            loggerFactory.CreateLogger<NewsletterService>(),
+            BuildRunContextKey(NewsletterType.DevTechMVP, weekStart, weekEnd));
 
         // Detect major releases from blog pool
         List<ReleaseEntry> blogPool = [..dotNetBlogEntries, ..devBlogEntries, ..azureBlogEntries,
