@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 using NewsletterGenerator;
-using GitHub.Copilot.SDK;
+using GitHub.Copilot;
 using Microsoft.Extensions.Logging;
 using NewsletterGenerator.Models;
 using Spectre.Console;
@@ -32,20 +32,6 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         }
     }
 
-    private Task<PermissionRequestResult> DenyUnexpectedPermissionRequest(
-        PermissionRequest request,
-        PermissionInvocation invocation)
-    {
-        logger.LogError(
-            "Unexpected permission request in newsletter generation session {SessionId}: kind={Kind}",
-            invocation.SessionId,
-            request.Kind);
-
-        return Task.FromException<PermissionRequestResult>(
-            new InvalidOperationException(
-                $"Unexpected permission request for newsletter generation session: {request.Kind}"));
-    }
-
     private SessionHooks CreateSessionHooks() => new()
     {
         OnErrorOccurred = (input, invocation) =>
@@ -72,7 +58,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
     {
         AvailableTools = [],
         ClientName = CopilotClientName,
-        OnPermissionRequest = DenyUnexpectedPermissionRequest,
+        OnPermissionRequest = PermissionHandler.ApproveAll,
         Model = model,
         Streaming = true,
         ReasoningEffort = null,
@@ -1093,7 +1079,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         var tcs = new TaskCompletionSource<string>(
             TaskCreationOptions.RunContinuationsAsynchronously);
 
-        session.On(evt =>
+        session.On<SessionEvent>(evt =>
         {
             switch (evt)
             {

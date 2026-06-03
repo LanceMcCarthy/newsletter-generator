@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Text;
-using GitHub.Copilot.SDK;
+using GitHub.Copilot;
 using Microsoft.Extensions.Logging;
 using NewsletterGenerator.Models;
 using NewsletterGenerator.Services;
