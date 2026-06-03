@@ -10,6 +10,7 @@ namespace NewsletterGenerator.Services;
 public partial class NewsletterService(ILogger<NewsletterService> logger)
 {
     private const string CopilotClientName = "newsletter-generator";
+    private const string ModelFallbacksEnvironmentVariable = "NEWSLETTER_MODEL_FALLBACKS";
     private readonly object usageLock = new();
     private readonly List<CopilotUsageMetric> usageMetrics = [];
 
@@ -85,6 +86,55 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             await client.DisposeAsync();
             throw;
         }
+    }
+
+    internal static IReadOnlyList<string> BuildModelFallbackOrder(string? selectedModel, string? configuredFallbacks = null)
+    {
+        static IEnumerable<string> ParseConfiguredFallbacks(string? value) =>
+            string.IsNullOrWhiteSpace(value)
+                ? []
+                : value.Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var fallbackModels = new List<string>();
+        if (!string.IsNullOrWhiteSpace(selectedModel))
+            fallbackModels.Add(selectedModel.Trim());
+
+        var configured = ParseConfiguredFallbacks(configuredFallbacks).ToList();
+        if (configured.Count > 0)
+            fallbackModels.AddRange(configured);
+        else
+            fallbackModels.AddRange(["gpt-5.3-codex", "gpt-4.1"]);
+
+        return fallbackModels
+            .Where(static candidate => !string.IsNullOrWhiteSpace(candidate))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    internal static bool IsModelFallbackEligible(Exception exception)
+    {
+        if (exception is TimeoutException or HttpRequestException or TaskCanceledException)
+            return true;
+
+        if (exception is InvalidOperationException)
+        {
+            var message = exception.Message;
+            if (string.IsNullOrWhiteSpace(message))
+                return false;
+
+            return message.Contains("rate limit", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("temporar", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("timeout", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("unavailable", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("overloaded", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("quota", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("model", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("429", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("502", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("503", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
     }
 
     public async Task<string> GenerateWelcomeSummaryAsync(
@@ -337,6 +387,8 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
 
         const int maxAttempts = 3;
         var result = string.Empty;
+        var fallbackOrder = BuildModelFallbackOrder(model, Environment.GetEnvironmentVariable(ModelFallbacksEnvironmentVariable));
+        var selectedModel = fallbackOrder.FirstOrDefault();
 
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -349,7 +401,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             }
 
             await using var copilot = await CreateStartedSessionAsync(
-                model,
+                selectedModel,
                 """
                         You are a technical newsletter editor for a GitHub Copilot developer community.
                         Your job is to aggressively curate and summarize release notes into polished newsletter content.
@@ -374,13 +426,53 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
                         - Start directly with the section header (## GitHub Copilot CLI Updates or ## GitHub Copilot SDK Updates)
                         """);
 
-            result = await SendPromptAsync(copilot.Session, prompt, $"{productName} summary (attempt {attempt})");
-            logger.LogInformation("{Product} attempt {Attempt}: {Length} chars", productName, attempt, result.Length);
+            for (var modelIndex = 0; modelIndex < fallbackOrder.Count; modelIndex++)
+            {
+                var activeModel = fallbackOrder[modelIndex];
+
+                try
+                {
+                    result = await SendPromptAsync(copilot.Session, prompt, $"{productName} summary (attempt {attempt}, model {activeModel})");
+                    logger.LogInformation("{Product} attempt {Attempt} with model {Model}: {Length} chars",
+                        productName, attempt, activeModel, result.Length);
+
+                    if (!string.IsNullOrWhiteSpace(result))
+                        break;
+
+                    logger.LogWarning("{Product}: empty response on attempt {Attempt}/{Max} with model {Model}",
+                        productName, attempt, maxAttempts, activeModel);
+                    break;
+                }
+                catch (Exception ex) when (IsModelFallbackEligible(ex) && modelIndex < fallbackOrder.Count - 1)
+                {
+                    var nextModel = fallbackOrder[modelIndex + 1];
+                    logger.LogWarning(ex,
+                        "{Product}: model {Model} failed on attempt {Attempt}/{Max}. Falling back in-session to model {NextModel}.",
+                        productName,
+                        activeModel,
+                        attempt,
+                        maxAttempts,
+                        nextModel);
+                    try
+                    {
+                        await copilot.Session.SetModelAsync(nextModel);
+                        logger.LogInformation("{Product}: switched session model from {Model} to {NextModel}",
+                            productName, activeModel, nextModel);
+                    }
+                    catch (Exception setModelEx)
+                    {
+                        logger.LogWarning(setModelEx,
+                            "{Product}: failed to switch session model from {Model} to {NextModel}; retrying with a new session on next attempt",
+                            productName,
+                            activeModel,
+                            nextModel);
+                        break;
+                    }
+                }
+            }
 
             if (!string.IsNullOrWhiteSpace(result))
                 break;
-
-            logger.LogWarning("{Product}: empty response on attempt {Attempt}/{Max}", productName, attempt, maxAttempts);
         }
 
         logger.LogInformation("{Product} summary generated ({Length} chars)", productName, result.Length);
@@ -1440,4 +1532,3 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         sb.AppendLine();
     }
 }
-
