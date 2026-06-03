@@ -10,6 +10,13 @@ namespace NewsletterGenerator.Services;
 public partial class NewsletterService(ILogger<NewsletterService> logger)
 {
     private const string CopilotClientName = "newsletter-generator";
+    private const string NewsletterTitleOperation = "newsletter-title";
+    private const string WelcomeSummaryOperation = "welcome-summary";
+    private const string NewsAndAnnouncementsOperation = "news-announcements";
+    private const string ReleaseSynthesisOperation = "release-section-synthesis";
+    private const string RevisionOperation = "revision";
+    private const string VsCodeNewsletterOperation = "vscode-newsletter";
+    private const string SectionSynthesisOperation = "section-synthesis";
     private readonly object usageLock = new();
     private readonly List<CopilotUsageMetric> usageMetrics = [];
 
@@ -54,14 +61,26 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         }
     };
 
-    private SessionConfig CreateSessionConfig(string? model, string systemMessageContent) => new()
+    internal static string ResolveReasoningEffort(string operationProfile) => operationProfile switch
+    {
+        NewsletterTitleOperation => "low",
+        WelcomeSummaryOperation => "medium",
+        NewsAndAnnouncementsOperation => "medium",
+        RevisionOperation => "medium",
+        ReleaseSynthesisOperation => "high",
+        VsCodeNewsletterOperation => "high",
+        SectionSynthesisOperation => "high",
+        _ => "medium"
+    };
+
+    private SessionConfig CreateSessionConfig(string? model, string systemMessageContent, string reasoningEffort) => new()
     {
         AvailableTools = [],
         ClientName = CopilotClientName,
         OnPermissionRequest = PermissionHandler.ApproveAll,
         Model = model,
         Streaming = true,
-        ReasoningEffort = null,
+        ReasoningEffort = reasoningEffort,
         Hooks = CreateSessionHooks(),
         SystemMessage = new SystemMessageConfig
         {
@@ -70,14 +89,21 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         }
     };
 
-    private async Task<StartedSession> CreateStartedSessionAsync(string? model, string systemMessageContent)
+    private async Task<StartedSession> CreateStartedSessionAsync(string? model, string operationProfile, string systemMessageContent)
     {
+        var reasoningEffort = ResolveReasoningEffort(operationProfile);
+        logger.LogInformation(
+            "Creating Copilot session for {OperationProfile} (model={Model}, reasoning={ReasoningEffort})",
+            operationProfile,
+            model ?? "(default)",
+            reasoningEffort);
+
         var client = new CopilotClient();
         await client.StartAsync();
 
         try
         {
-            var session = await client.CreateSessionAsync(CreateSessionConfig(model, systemMessageContent));
+            var session = await client.CreateSessionAsync(CreateSessionConfig(model, systemMessageContent, reasoningEffort));
             return new StartedSession(client, session);
         }
         catch
@@ -116,6 +142,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         AnsiConsole.MarkupLine("[grey]Generating Welcome summary...[/]");
         await using var copilot = await CreateStartedSessionAsync(
             model,
+            WelcomeSummaryOperation,
             """
                     You are a technical newsletter editor writing for an internal developer audience at Microsoft.
                     Your job is to create a concise, factual summary of the week's updates.
@@ -190,6 +217,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         AnsiConsole.MarkupLine("[grey]Generating newsletter title...[/]");
         await using var copilot = await CreateStartedSessionAsync(
             model,
+            NewsletterTitleOperation,
             """
                     You generate a short, descriptive title for a weekly developer newsletter.
                     The title should highlight 2-3 of the most important items from the week.
@@ -251,6 +279,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         AnsiConsole.MarkupLine("[grey]Generating News and Announcements...[/]");
         await using var copilot = await CreateStartedSessionAsync(
             model,
+            NewsAndAnnouncementsOperation,
             """
                     You are a technical newsletter editor for an internal Microsoft developer community.
                     Your job is to curate and write the "News and Announcements" section from changelog
@@ -350,6 +379,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
 
             await using var copilot = await CreateStartedSessionAsync(
                 model,
+                ReleaseSynthesisOperation,
                 """
                         You are a technical newsletter editor for a GitHub Copilot developer community.
                         Your job is to aggressively curate and summarize release notes into polished newsletter content.
@@ -433,6 +463,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
 
         await using var copilot = await CreateStartedSessionAsync(
             model,
+            RevisionOperation,
             """
                     You revise existing markdown newsletters for an internal developer audience.
                     Keep the tone direct, factual, and concise.
@@ -506,6 +537,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         AnsiConsole.MarkupLine("[grey]Generating VS Code newsletter...[/]");
         await using var copilot = await CreateStartedSessionAsync(
             model,
+            VsCodeNewsletterOperation,
             """
                     You are a technical newsletter editor writing for an internal Microsoft developer audience.
                     Your job is to summarize weekly VS Code updates in a concise, factual tone.
@@ -695,7 +727,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         }
 
         AnsiConsole.MarkupLine($"[grey]Generating {Markup.Escape(displayLabel)}...[/]");
-        await using var copilot = await CreateStartedSessionAsync(model, systemMessage);
+        await using var copilot = await CreateStartedSessionAsync(model, SectionSynthesisOperation, systemMessage);
         var result = await SendPromptAsync(copilot.Session, prompt, displayLabel);
         await cache.SaveCacheAsync(cacheKey, result, sourceHash);
         return result;
@@ -1440,4 +1472,3 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         sb.AppendLine();
     }
 }
-
