@@ -36,7 +36,7 @@ public class GenerateSettingsTests
 
         Assert.NotNull(method);
 
-        var config = (SessionConfig)method.Invoke(service, ["gpt-5.3-codex", "system prompt", enabled])!;
+        var config = (SessionConfig)method.Invoke(service, ["gpt-5.3-codex", "system prompt", "medium", enabled])!;
 
         Assert.NotNull(config.InfiniteSessions);
         Assert.Equal(enabled, config.InfiniteSessions.Enabled);
