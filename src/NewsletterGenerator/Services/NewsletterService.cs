@@ -489,7 +489,11 @@ public partial class NewsletterService(
             if (revisionSessionModel != model || revisionSession is null)
             {
                 if (revisionSession is not null)
+                {
                     await revisionSession.DisposeAsync();
+                    revisionSession = null;
+                    revisionSessionModel = null;
+                }
 
                 revisionSession = await CreateStartedSessionAsync(
                     model,
