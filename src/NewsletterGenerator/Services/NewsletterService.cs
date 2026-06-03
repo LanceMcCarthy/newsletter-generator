@@ -766,7 +766,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger, string
         }
 
         AnsiConsole.MarkupLine($"[grey]Generating {Markup.Escape(displayLabel)}...[/]");
-        await using var copilot = await CreateStartedSessionAsync(model, systemMessage, displayLabel);
+        await using var copilot = await CreateStartedSessionAsync(model, systemMessage, cacheKey);
         var result = await SendPromptAsync(copilot.Session, prompt, displayLabel);
         await cache.SaveCacheAsync(cacheKey, result, sourceHash);
         return result;
