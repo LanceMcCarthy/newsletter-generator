@@ -474,8 +474,19 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
                         productName, attempt, maxAttempts, activeModel);
                     break;
                 }
-                catch (Exception ex) when (IsModelFallbackEligible(ex) && modelIndex < fallbackOrder.Count - 1)
+                catch (Exception ex) when (IsModelFallbackEligible(ex))
                 {
+                    if (modelIndex >= fallbackOrder.Count - 1)
+                    {
+                        logger.LogWarning(ex,
+                            "{Product}: model {Model} failed on attempt {Attempt}/{Max} and no further fallbacks remain; retrying with a new session on next attempt",
+                            productName,
+                            activeModel,
+                            attempt,
+                            maxAttempts);
+                        break;
+                    }
+
                     var nextModel = fallbackOrder[modelIndex + 1];
                     logger.LogWarning(ex,
                         "{Product}: model {Model} failed on attempt {Attempt}/{Max}. Falling back in-session to model {NextModel}.",
