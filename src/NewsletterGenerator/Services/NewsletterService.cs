@@ -12,6 +12,14 @@ public partial class NewsletterService(
     bool useInfiniteSessionsForRevisions = false) : IAsyncDisposable
 {
     private const string CopilotClientName = "newsletter-generator";
+    private const string ModelFallbacksEnvironmentVariable = "NEWSLETTER_MODEL_FALLBACKS";
+    private const string NewsletterTitleOperation = "newsletter-title";
+    private const string WelcomeSummaryOperation = "welcome-summary";
+    private const string NewsAndAnnouncementsOperation = "news-announcements";
+    private const string ReleaseSynthesisOperation = "release-section-synthesis";
+    private const string RevisionOperation = "revision";
+    private const string VsCodeNewsletterOperation = "vscode-newsletter";
+    private const string SectionSynthesisOperation = "section-synthesis";
     private readonly object usageLock = new();
     private readonly List<CopilotUsageMetric> usageMetrics = [];
     private StartedSession? revisionSession;
@@ -58,17 +66,33 @@ public partial class NewsletterService(
         }
     };
 
+<<<<<<< HEAD
     private SessionConfig CreateSessionConfig(
         string? model,
         string systemMessageContent,
         bool? enableInfiniteSessions = null) => new()
+=======
+    internal static string ResolveReasoningEffort(string operationProfile) => operationProfile switch
+    {
+        NewsletterTitleOperation => "low",
+        WelcomeSummaryOperation => "medium",
+        NewsAndAnnouncementsOperation => "medium",
+        RevisionOperation => "medium",
+        ReleaseSynthesisOperation => "high",
+        VsCodeNewsletterOperation => "high",
+        SectionSynthesisOperation => "high",
+        _ => "medium"
+    };
+
+    private SessionConfig CreateSessionConfig(string? model, string systemMessageContent, string reasoningEffort) => new()
+>>>>>>> origin/main
     {
         AvailableTools = [],
         ClientName = CopilotClientName,
         OnPermissionRequest = PermissionHandler.ApproveAll,
         Model = model,
         Streaming = true,
-        ReasoningEffort = null,
+        ReasoningEffort = reasoningEffort,
         Hooks = CreateSessionHooks(),
         InfiniteSessions = enableInfiniteSessions.HasValue
             ? new InfiniteSessionConfig { Enabled = enableInfiniteSessions.Value }
@@ -80,18 +104,33 @@ public partial class NewsletterService(
         }
     };
 
+<<<<<<< HEAD
     private async Task<StartedSession> CreateStartedSessionAsync(
         string? model,
         string systemMessageContent,
         bool? enableInfiniteSessions = null)
+=======
+    private async Task<StartedSession> CreateStartedSessionAsync(string? model, string operationProfile, string systemMessageContent)
+>>>>>>> origin/main
     {
+        var reasoningEffort = ResolveReasoningEffort(operationProfile);
+        logger.LogInformation(
+            "Creating Copilot session for {OperationProfile} (model={Model}, reasoning={ReasoningEffort})",
+            operationProfile,
+            model ?? "(default)",
+            reasoningEffort);
+
         var client = new CopilotClient();
         await client.StartAsync();
 
         try
         {
+<<<<<<< HEAD
             var session = await client.CreateSessionAsync(
                 CreateSessionConfig(model, systemMessageContent, enableInfiniteSessions));
+=======
+            var session = await client.CreateSessionAsync(CreateSessionConfig(model, systemMessageContent, reasoningEffort));
+>>>>>>> origin/main
             return new StartedSession(client, session);
         }
         catch
@@ -101,6 +140,7 @@ public partial class NewsletterService(
         }
     }
 
+<<<<<<< HEAD
     public async ValueTask DisposeAsync()
     {
         if (revisionSession is null)
@@ -109,6 +149,55 @@ public partial class NewsletterService(
         await revisionSession.DisposeAsync();
         revisionSession = null;
         revisionSessionModel = null;
+=======
+    internal static IReadOnlyList<string> BuildModelFallbackOrder(string? selectedModel, string? configuredFallbacks = null)
+    {
+        static IEnumerable<string> ParseConfiguredFallbacks(string? value) =>
+            string.IsNullOrWhiteSpace(value)
+                ? []
+                : value.Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var fallbackModels = new List<string>();
+        if (!string.IsNullOrWhiteSpace(selectedModel))
+            fallbackModels.Add(selectedModel.Trim());
+
+        var configured = ParseConfiguredFallbacks(configuredFallbacks).ToList();
+        if (configured.Count > 0)
+            fallbackModels.AddRange(configured);
+        else
+            fallbackModels.AddRange(["gpt-5.3-codex", "gpt-4.1"]);
+
+        return fallbackModels
+            .Where(static candidate => !string.IsNullOrWhiteSpace(candidate))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    internal static bool IsModelFallbackEligible(Exception exception)
+    {
+        if (exception is TimeoutException or HttpRequestException or TaskCanceledException)
+            return true;
+
+        if (exception is InvalidOperationException)
+        {
+            var message = exception.Message;
+            if (string.IsNullOrWhiteSpace(message))
+                return false;
+
+            return message.Contains("rate limit", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("temporar", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("timeout", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("unavailable", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("overloaded", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("quota", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("model", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("429", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("502", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("503", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+>>>>>>> origin/main
     }
 
     public async Task<string> GenerateWelcomeSummaryAsync(
@@ -140,6 +229,7 @@ public partial class NewsletterService(
         AnsiConsole.MarkupLine("[grey]Generating Welcome summary...[/]");
         await using var copilot = await CreateStartedSessionAsync(
             model,
+            WelcomeSummaryOperation,
             """
                     You are a technical newsletter editor writing for an internal developer audience at Microsoft.
                     Your job is to create a concise, factual summary of the week's updates.
@@ -214,6 +304,7 @@ public partial class NewsletterService(
         AnsiConsole.MarkupLine("[grey]Generating newsletter title...[/]");
         await using var copilot = await CreateStartedSessionAsync(
             model,
+            NewsletterTitleOperation,
             """
                     You generate a short, descriptive title for a weekly developer newsletter.
                     The title should highlight 2-3 of the most important items from the week.
@@ -275,6 +366,7 @@ public partial class NewsletterService(
         AnsiConsole.MarkupLine("[grey]Generating News and Announcements...[/]");
         await using var copilot = await CreateStartedSessionAsync(
             model,
+            NewsAndAnnouncementsOperation,
             """
                     You are a technical newsletter editor for an internal Microsoft developer community.
                     Your job is to curate and write the "News and Announcements" section from changelog
@@ -361,6 +453,8 @@ public partial class NewsletterService(
 
         const int maxAttempts = 3;
         var result = string.Empty;
+        var fallbackOrder = BuildModelFallbackOrder(model, Environment.GetEnvironmentVariable(ModelFallbacksEnvironmentVariable));
+        var selectedModel = fallbackOrder.FirstOrDefault();
 
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -373,7 +467,8 @@ public partial class NewsletterService(
             }
 
             await using var copilot = await CreateStartedSessionAsync(
-                model,
+                selectedModel,
+                ReleaseSynthesisOperation,
                 """
                         You are a technical newsletter editor for a GitHub Copilot developer community.
                         Your job is to aggressively curate and summarize release notes into polished newsletter content.
@@ -398,13 +493,64 @@ public partial class NewsletterService(
                         - Start directly with the section header (## GitHub Copilot CLI Updates or ## GitHub Copilot SDK Updates)
                         """);
 
-            result = await SendPromptAsync(copilot.Session, prompt, $"{productName} summary (attempt {attempt})");
-            logger.LogInformation("{Product} attempt {Attempt}: {Length} chars", productName, attempt, result.Length);
+            for (var modelIndex = 0; modelIndex < fallbackOrder.Count; modelIndex++)
+            {
+                var activeModel = fallbackOrder[modelIndex];
+
+                try
+                {
+                    result = await SendPromptAsync(copilot.Session, prompt, $"{productName} summary (attempt {attempt}, model {activeModel})");
+                    logger.LogInformation("{Product} attempt {Attempt} with model {Model}: {Length} chars",
+                        productName, attempt, activeModel, result.Length);
+
+                    if (!string.IsNullOrWhiteSpace(result))
+                        break;
+
+                    logger.LogWarning("{Product}: empty response on attempt {Attempt}/{Max} with model {Model}",
+                        productName, attempt, maxAttempts, activeModel);
+                    break;
+                }
+                catch (Exception ex) when (IsModelFallbackEligible(ex))
+                {
+                    if (modelIndex >= fallbackOrder.Count - 1)
+                    {
+                        logger.LogWarning(ex,
+                            "{Product}: model {Model} failed on attempt {Attempt}/{Max} and no further fallbacks remain; retrying with a new session on next attempt",
+                            productName,
+                            activeModel,
+                            attempt,
+                            maxAttempts);
+                        break;
+                    }
+
+                    var nextModel = fallbackOrder[modelIndex + 1];
+                    logger.LogWarning(ex,
+                        "{Product}: model {Model} failed on attempt {Attempt}/{Max}. Falling back in-session to model {NextModel}.",
+                        productName,
+                        activeModel,
+                        attempt,
+                        maxAttempts,
+                        nextModel);
+                    try
+                    {
+                        await copilot.Session.SetModelAsync(nextModel);
+                        logger.LogInformation("{Product}: switched session model from {Model} to {NextModel}",
+                            productName, activeModel, nextModel);
+                    }
+                    catch (Exception setModelEx)
+                    {
+                        logger.LogWarning(setModelEx,
+                            "{Product}: failed to switch session model from {Model} to {NextModel}; retrying with a new session on next attempt",
+                            productName,
+                            activeModel,
+                            nextModel);
+                        break;
+                    }
+                }
+            }
 
             if (!string.IsNullOrWhiteSpace(result))
                 break;
-
-            logger.LogWarning("{Product}: empty response on attempt {Attempt}/{Max}", productName, attempt, maxAttempts);
         }
 
         logger.LogInformation("{Product} summary generated ({Length} chars)", productName, result.Length);
@@ -455,7 +601,13 @@ public partial class NewsletterService(
         logger.LogInformation("Revising newsletter markdown (model={Model})", model);
         AnsiConsole.MarkupLine("[grey]Applying revisions...[/]");
 
+<<<<<<< HEAD
         const string revisionSystemPrompt =
+=======
+        await using var copilot = await CreateStartedSessionAsync(
+            model,
+            RevisionOperation,
+>>>>>>> origin/main
             """
             You revise existing markdown newsletters for an internal developer audience.
             Keep the tone direct, factual, and concise.
@@ -569,6 +721,7 @@ public partial class NewsletterService(
         AnsiConsole.MarkupLine("[grey]Generating VS Code newsletter...[/]");
         await using var copilot = await CreateStartedSessionAsync(
             model,
+            VsCodeNewsletterOperation,
             """
                     You are a technical newsletter editor writing for an internal Microsoft developer audience.
                     Your job is to summarize weekly VS Code updates in a concise, factual tone.
@@ -758,7 +911,7 @@ public partial class NewsletterService(
         }
 
         AnsiConsole.MarkupLine($"[grey]Generating {Markup.Escape(displayLabel)}...[/]");
-        await using var copilot = await CreateStartedSessionAsync(model, systemMessage);
+        await using var copilot = await CreateStartedSessionAsync(model, SectionSynthesisOperation, systemMessage);
         var result = await SendPromptAsync(copilot.Session, prompt, displayLabel);
         await cache.SaveCacheAsync(cacheKey, result, sourceHash);
         return result;
@@ -1136,11 +1289,10 @@ public partial class NewsletterService(
     private async Task<string> SendPromptAsync(CopilotSession session, string prompt, string operation)
     {
         logger.LogDebug("SendPromptAsync: sending prompt for {Operation} ({Length} chars)", operation, prompt.Length);
-        var response = new StringBuilder();
+        var latestResponse = new StringBuilder();
+        string? latestMessageId = null;
         var eventCount = 0;
         var streamedChars = 0;
-        var tcs = new TaskCompletionSource<string>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
 
         using var subscription = session.On<SessionEvent>(evt =>
         {
@@ -1159,10 +1311,11 @@ public partial class NewsletterService(
                     eventCount++;
                     var contentLen = msg.Data.Content?.Length ?? 0;
                     logger.LogDebug("AssistantMessageEvent #{Count}: {Length} chars", eventCount, contentLen);
+                    latestMessageId = msg.Data.MessageId;
                     if (contentLen > 0)
                     {
-                        response.Clear();
-                        response.Append(msg.Data.Content);
+                        latestResponse.Clear();
+                        latestResponse.Append(msg.Data.Content);
                     }
                     else
                     {
@@ -1172,17 +1325,18 @@ public partial class NewsletterService(
                 case SessionIdleEvent:
                     logger.LogDebug("SessionIdleEvent received after {Count} message events, {StreamedChars} streamed chars",
                         eventCount, streamedChars);
-                    tcs.TrySetResult(response.ToString());
                     break;
                 case SessionErrorEvent err:
                     logger.LogError("Copilot session error: {Message}", err.Data.Message);
-                    tcs.TrySetException(new InvalidOperationException(err.Data.Message));
                     break;
             }
         });
 
-        var messageId = await session.SendAsync(new MessageOptions { Prompt = prompt });
-        var result = await tcs.Task;
+        var finalMessage = await session.SendAndWaitAsync(new MessageOptions { Prompt = prompt });
+        var result = string.IsNullOrWhiteSpace(finalMessage?.Data.Content)
+            ? latestResponse.ToString()
+            : finalMessage.Data.Content;
+        var messageId = finalMessage?.Data.MessageId ?? latestMessageId;
         logger.LogInformation("SendPromptAsync: received response ({Length} chars, empty={IsEmpty}, events={Events}, streamedChars={StreamedChars})",
             result.Length, string.IsNullOrWhiteSpace(result), eventCount, streamedChars);
         await TryCaptureUsageMetricsAsync(session, operation, prompt.Length, result.Length, messageId);
