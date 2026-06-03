@@ -431,7 +431,6 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
 
             await using var copilot = await CreateStartedSessionAsync(
                 selectedModel,
-                model,
                 ReleaseSynthesisOperation,
                 """
                         You are a technical newsletter editor for a GitHub Copilot developer community.
