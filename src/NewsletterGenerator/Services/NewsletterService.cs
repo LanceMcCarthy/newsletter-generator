@@ -1073,13 +1073,12 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
     private async Task<string> SendPromptAsync(CopilotSession session, string prompt, string operation)
     {
         logger.LogDebug("SendPromptAsync: sending prompt for {Operation} ({Length} chars)", operation, prompt.Length);
-        var response = new StringBuilder();
+        var latestResponse = new StringBuilder();
+        string? latestMessageId = null;
         var eventCount = 0;
         var streamedChars = 0;
-        var tcs = new TaskCompletionSource<string>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
 
-        session.On<SessionEvent>(evt =>
+        using var subscription = session.On<SessionEvent>(evt =>
         {
             switch (evt)
             {
@@ -1096,10 +1095,11 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
                     eventCount++;
                     var contentLen = msg.Data.Content?.Length ?? 0;
                     logger.LogDebug("AssistantMessageEvent #{Count}: {Length} chars", eventCount, contentLen);
+                    latestMessageId = msg.Data.MessageId;
                     if (contentLen > 0)
                     {
-                        response.Clear();
-                        response.Append(msg.Data.Content);
+                        latestResponse.Clear();
+                        latestResponse.Append(msg.Data.Content);
                     }
                     else
                     {
@@ -1109,17 +1109,18 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
                 case SessionIdleEvent:
                     logger.LogDebug("SessionIdleEvent received after {Count} message events, {StreamedChars} streamed chars",
                         eventCount, streamedChars);
-                    tcs.TrySetResult(response.ToString());
                     break;
                 case SessionErrorEvent err:
                     logger.LogError("Copilot session error: {Message}", err.Data.Message);
-                    tcs.TrySetException(new InvalidOperationException(err.Data.Message));
                     break;
             }
         });
 
-        var messageId = await session.SendAsync(new MessageOptions { Prompt = prompt });
-        var result = await tcs.Task;
+        var finalMessage = await session.SendAndWaitAsync(new MessageOptions { Prompt = prompt });
+        var result = string.IsNullOrWhiteSpace(finalMessage?.Data.Content)
+            ? latestResponse.ToString()
+            : finalMessage.Data.Content;
+        var messageId = finalMessage?.Data.MessageId ?? latestMessageId;
         logger.LogInformation("SendPromptAsync: received response ({Length} chars, empty={IsEmpty}, events={Events}, streamedChars={StreamedChars})",
             result.Length, string.IsNullOrWhiteSpace(result), eventCount, streamedChars);
         await TryCaptureUsageMetricsAsync(session, operation, prompt.Length, result.Length, messageId);
@@ -1440,4 +1441,3 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         sb.AppendLine();
     }
 }
-
