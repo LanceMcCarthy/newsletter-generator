@@ -176,6 +176,12 @@ dotnet run -- --yes
 dotnet run -- --debug
 ```
 
+**Enable infinite sessions for interactive revision loops:**
+
+```bash
+dotnet run -- --infinite-sessions
+```
+
 ### Non-interactive mode
 
 Use non-interactive mode for redirected output, scripts, or CI.
@@ -263,5 +269,6 @@ This project uses the [GitHub.Copilot.SDK](https://www.nuget.org/packages/GitHub
 | **PingAsync** | `doctor` command + startup status | Lightweight connectivity check without creating a full session |
 | **ListModelsAsync** | Model selection, `list-models` command | Enumerate available models for interactive selection |
 | **System messages** | `SystemMessageMode.Replace` on all sessions | Full control over system prompt for editorial tone and output formatting |
+| **Infinite sessions (interactive revisions)** | `--infinite-sessions` on revision loop sessions | Keeps multi-pass interactive revision context in a single long-running session |
 | **Event-driven responses** | `AssistantMessageEvent`, `AssistantMessageDeltaEvent`, `SessionIdleEvent`, `SessionErrorEvent` | Collect final responses and streaming deltas via pattern matching |
 | **GetAuthStatusAsync** | Startup status table | Display authentication state before generation |

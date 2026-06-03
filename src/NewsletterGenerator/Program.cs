@@ -52,6 +52,11 @@ internal sealed class GenerateSettings : CommandSettings
     [DefaultValue(false)]
     public bool NonInteractive { get; init; }
 
+    [Description("Enable infinite sessions for interactive revision loops")]
+    [CommandOption("--infinite-sessions")]
+    [DefaultValue(false)]
+    public bool InfiniteSessions { get; init; }
+
     [Description("Skip confirmation prompt before generation")]
     [CommandOption("--yes|-y")]
     [DefaultValue(false)]

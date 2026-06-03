@@ -7,7 +7,9 @@ using Spectre.Console;
 
 namespace NewsletterGenerator.Services;
 
-public partial class NewsletterService(ILogger<NewsletterService> logger)
+public partial class NewsletterService(
+    ILogger<NewsletterService> logger,
+    bool useInfiniteSessionsForRevisions = false) : IAsyncDisposable
 {
     private const string CopilotClientName = "newsletter-generator";
     private const string ModelFallbacksEnvironmentVariable = "NEWSLETTER_MODEL_FALLBACKS";
@@ -20,6 +22,8 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
     private const string SectionSynthesisOperation = "section-synthesis";
     private readonly object usageLock = new();
     private readonly List<CopilotUsageMetric> usageMetrics = [];
+    private StartedSession? revisionSession;
+    private string? revisionSessionModel;
 
     internal IReadOnlyList<CopilotUsageMetric> GetUsageMetricsSnapshot()
     {
@@ -74,7 +78,11 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         _ => "medium"
     };
 
-    private SessionConfig CreateSessionConfig(string? model, string systemMessageContent, string reasoningEffort) => new()
+    private SessionConfig CreateSessionConfig(
+        string? model,
+        string systemMessageContent,
+        string reasoningEffort,
+        bool? enableInfiniteSessions = null) => new()
     {
         AvailableTools = [],
         ClientName = CopilotClientName,
@@ -83,6 +91,9 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         Streaming = true,
         ReasoningEffort = reasoningEffort,
         Hooks = CreateSessionHooks(),
+        InfiniteSessions = enableInfiniteSessions.HasValue
+            ? new InfiniteSessionConfig { Enabled = enableInfiniteSessions.Value }
+            : null,
         SystemMessage = new SystemMessageConfig
         {
             Mode = SystemMessageMode.Replace,
@@ -90,7 +101,11 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         }
     };
 
-    private async Task<StartedSession> CreateStartedSessionAsync(string? model, string operationProfile, string systemMessageContent)
+    private async Task<StartedSession> CreateStartedSessionAsync(
+        string? model,
+        string operationProfile,
+        string systemMessageContent,
+        bool? enableInfiniteSessions = null)
     {
         var reasoningEffort = ResolveReasoningEffort(operationProfile);
         logger.LogInformation(
@@ -104,7 +119,7 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
 
         try
         {
-            var session = await client.CreateSessionAsync(CreateSessionConfig(model, systemMessageContent, reasoningEffort));
+            var session = await client.CreateSessionAsync(CreateSessionConfig(model, systemMessageContent, reasoningEffort, enableInfiniteSessions));
             return new StartedSession(client, session);
         }
         catch
@@ -112,6 +127,16 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             await client.DisposeAsync();
             throw;
         }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (revisionSession is null)
+            return;
+
+        await revisionSession.DisposeAsync();
+        revisionSession = null;
+        revisionSessionModel = null;
     }
 
     internal static IReadOnlyList<string> BuildModelFallbackOrder(string? selectedModel, string? configuredFallbacks = null)
@@ -564,15 +589,13 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
         logger.LogInformation("Revising newsletter markdown (model={Model})", model);
         AnsiConsole.MarkupLine("[grey]Applying revisions...[/]");
 
-        await using var copilot = await CreateStartedSessionAsync(
-            model,
-            RevisionOperation,
+        const string revisionSystemPrompt =
             """
-                    You revise existing markdown newsletters for an internal developer audience.
-                    Keep the tone direct, factual, and concise.
-                    Preserve the existing markdown structure, headings, and links unless the request explicitly asks to change them.
-                    Return only the full revised markdown document.
-                    """);
+            You revise existing markdown newsletters for an internal developer audience.
+            Keep the tone direct, factual, and concise.
+            Preserve the existing markdown structure, headings, and links unless the request explicitly asks to change them.
+            Return only the full revised markdown document.
+            """;
 
         var prompt = $"""
             Apply the requested revisions to this {newsletterLabel} markdown newsletter.
@@ -592,9 +615,51 @@ public partial class NewsletterService(ILogger<NewsletterService> logger)
             ```
             """;
 
-        var result = await SendPromptAsync(copilot.Session, prompt, "Revision");
-        logger.LogInformation("Revised newsletter markdown generated ({Length} chars)", result.Length);
-        return result;
+        CopilotSession session;
+        StartedSession? singleUseSession = null;
+
+        if (useInfiniteSessionsForRevisions)
+        {
+            if (revisionSessionModel != model || revisionSession is null)
+            {
+                if (revisionSession is not null)
+                {
+                    await revisionSession.DisposeAsync();
+                    revisionSession = null;
+                    revisionSessionModel = null;
+                }
+
+                revisionSession = await CreateStartedSessionAsync(
+                    model,
+                    RevisionOperation,
+                    revisionSystemPrompt,
+                    enableInfiniteSessions: true);
+                revisionSessionModel = model;
+            }
+
+            session = revisionSession.Session;
+        }
+        else
+        {
+            singleUseSession = await CreateStartedSessionAsync(
+                model,
+                RevisionOperation,
+                revisionSystemPrompt,
+                enableInfiniteSessions: false);
+            session = singleUseSession.Session;
+        }
+
+        try
+        {
+            var result = await SendPromptAsync(session, prompt, "Revision");
+            logger.LogInformation("Revised newsletter markdown generated ({Length} chars)", result.Length);
+            return result;
+        }
+        finally
+        {
+            if (singleUseSession is not null)
+                await singleUseSession.DisposeAsync();
+        }
     }
 
     public async Task<string> GenerateVsCodeNewsletterAsync(
