@@ -9,13 +9,10 @@ using Spectre.Console;
 
 namespace NewsletterGenerator.Services;
 
-<<<<<<< HEAD
-public partial class NewsletterService(ILogger<NewsletterService> logger, string? runContextKey = null)
-=======
 public partial class NewsletterService(
     ILogger<NewsletterService> logger,
+    string? runContextKey = null,
     bool useInfiniteSessionsForRevisions = false) : IAsyncDisposable
->>>>>>> origin/main
 {
     private const string CopilotClientName = "newsletter-generator";
     private const string ModelFallbacksEnvironmentVariable = "NEWSLETTER_MODEL_FALLBACKS";
@@ -107,7 +104,6 @@ public partial class NewsletterService(
         }
     };
 
-<<<<<<< HEAD
     private ResumeSessionConfig CreateResumeSessionConfig(string? model, string systemMessageContent) => new()
     {
         AvailableTools = [],
@@ -131,14 +127,12 @@ public partial class NewsletterService(
         return $"newsletter-generator-{hash[..24]}";
     }
 
-    private async Task<StartedSession> CreateStartedSessionAsync(string? model, string systemMessageContent, string? workflowStep = null)
-=======
     private async Task<StartedSession> CreateStartedSessionAsync(
         string? model,
         string operationProfile,
         string systemMessageContent,
+        string? workflowStep = null,
         bool? enableInfiniteSessions = null)
->>>>>>> origin/main
     {
         var reasoningEffort = ResolveReasoningEffort(operationProfile);
         logger.LogInformation(
@@ -152,8 +146,7 @@ public partial class NewsletterService(
 
         try
         {
-<<<<<<< HEAD
-            if (!string.IsNullOrWhiteSpace(runContextKey) && !string.IsNullOrWhiteSpace(workflowStep))
+        if (!string.IsNullOrWhiteSpace(runContextKey) && !string.IsNullOrWhiteSpace(workflowStep))
             {
                 var filter = new SessionListFilter
                 {
@@ -179,7 +172,7 @@ public partial class NewsletterService(
                     return new StartedSession(client, resumedSession);
                 }
 
-                var newSessionConfig = CreateSessionConfig(model, systemMessageContent);
+                var newSessionConfig = CreateSessionConfig(model, systemMessageContent, reasoningEffort, enableInfiniteSessions);
                 newSessionConfig.SessionId = targetSessionId;
 
                 logger.LogInformation(
@@ -193,10 +186,7 @@ public partial class NewsletterService(
             logger.LogInformation(
                 "Creating new session (resume disabled; runContext={RunContext}, workflowStep={WorkflowStep})",
                 runContextKey ?? "<none>", workflowStep ?? "<none>");
-            var session = await client.CreateSessionAsync(CreateSessionConfig(model, systemMessageContent));
-=======
             var session = await client.CreateSessionAsync(CreateSessionConfig(model, systemMessageContent, reasoningEffort, enableInfiniteSessions));
->>>>>>> origin/main
             return new StartedSession(client, session);
         }
         catch
@@ -672,20 +662,11 @@ public partial class NewsletterService(
 
         const string revisionSystemPrompt =
             """
-<<<<<<< HEAD
-                    You revise existing markdown newsletters for an internal developer audience.
-                    Keep the tone direct, factual, and concise.
-                    Preserve the existing markdown structure, headings, and links unless the request explicitly asks to change them.
-                    Return only the full revised markdown document.
-                    """,
-            "revision");
-=======
             You revise existing markdown newsletters for an internal developer audience.
             Keep the tone direct, factual, and concise.
             Preserve the existing markdown structure, headings, and links unless the request explicitly asks to change them.
             Return only the full revised markdown document.
             """;
->>>>>>> origin/main
 
         var prompt = $"""
             Apply the requested revisions to this {newsletterLabel} markdown newsletter.
@@ -986,11 +967,7 @@ public partial class NewsletterService(
         }
 
         AnsiConsole.MarkupLine($"[grey]Generating {Markup.Escape(displayLabel)}...[/]");
-<<<<<<< HEAD
-        await using var copilot = await CreateStartedSessionAsync(model, systemMessage, cacheKey);
-=======
-        await using var copilot = await CreateStartedSessionAsync(model, SectionSynthesisOperation, systemMessage);
->>>>>>> origin/main
+        await using var copilot = await CreateStartedSessionAsync(model, SectionSynthesisOperation, systemMessage, cacheKey);
         var result = await SendPromptAsync(copilot.Session, prompt, displayLabel);
         await cache.SaveCacheAsync(cacheKey, result, sourceHash);
         return result;
