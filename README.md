@@ -262,14 +262,17 @@ This project uses the [GitHub.Copilot.SDK](https://www.nuget.org/packages/GitHub
 | Feature | Where | Why |
 | - | - | - |
 | **Streaming** | All AI sessions (`Streaming = true`) | Enables incremental response delivery; delta events are logged for diagnostics |
-| **Prompt submission + session events** | `session.SendAsync(new MessageOptions { Prompt = prompt })`, `AssistantMessageEvent`, `AssistantMessageDeltaEvent`, `SessionIdleEvent`, `SessionErrorEvent` | Streams responses and waits for the session to go idle before capturing the final output |
+| **ReasoningEffort profiles** | `ResolveReasoningEffort(operationProfile)`, `ReasoningEffort = reasoningEffort` | Uses low/medium/high profiles by operation so short summaries stay cheaper and larger sections get more headroom |
+| **SendAndWaitAsync** | `session.SendAndWaitAsync(new MessageOptions { Prompt = prompt })`, `AssistantMessageEvent`, `AssistantMessageDeltaEvent`, `SessionIdleEvent`, `SessionErrorEvent` | Submits prompts and waits for the final assistant message while still streaming deltas and idle events |
 | **Session hooks** | `OnErrorOccurred`, `OnSessionStart`, `OnSessionEnd` | SDK-level error retry and session lifecycle logging without manual plumbing |
+| **Deterministic session resume** | `BuildSessionId(runContext, workflowStep, model)`, `ResumeSessionAsync(...)` | Reuses the last matching session for repeat runs when a workflow step and run context are available |
 | **ClientName** | All AI sessions (`ClientName = "newsletter-generator"`) | Tags requests with a stable application identity, which is useful for diagnostics and example code |
 | **Permission policy / tool restrictions** | All AI sessions (`AvailableTools = []`, `OnPermissionRequest = PermissionHandler.ApproveAll`) | Uses a least-privilege session policy because newsletter generation does not request tool access |
+| **Model fallback** | `SetModelAsync(nextModel)` | Switches models in-session when the active model fails, instead of restarting from scratch |
 | **Usage metrics** | `session.Rpc.Usage.GetMetricsAsync()`, `session.SessionId` | Captures prompt/output token usage for each operation and ties it to the session ID |
 | **PingAsync** | `doctor` command + startup status | Lightweight connectivity check without creating a full session |
 | **ListModelsAsync** | Model selection, `list-models` command | Enumerate available models for interactive selection |
 | **System messages** | `SystemMessageMode.Replace` on all sessions | Full control over system prompt for editorial tone and output formatting |
-| **Infinite sessions (interactive revisions)** | `--infinite-sessions` on revision loop sessions | Keeps multi-pass interactive revision context in a single long-running session |
+| **Infinite sessions (interactive revisions)** | `InfiniteSessions = new InfiniteSessionConfig { Enabled = true }`, `--infinite-sessions` | Keeps multi-pass revision loops in a single long-running session |
 | **Event-driven responses** | `AssistantMessageEvent`, `AssistantMessageDeltaEvent`, `SessionIdleEvent`, `SessionErrorEvent` | Collect final responses and streaming deltas via pattern matching |
 | **GetAuthStatusAsync** | Startup status table | Display authentication state before generation |
