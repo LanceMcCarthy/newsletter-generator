@@ -256,10 +256,11 @@ This project uses the [GitHub.Copilot.SDK](https://www.nuget.org/packages/GitHub
 | Feature | Where | Why |
 | - | - | - |
 | **Streaming** | All AI sessions (`Streaming = true`) | Enables incremental response delivery; delta events are logged for diagnostics |
-| **ReasoningEffort** | All AI sessions (`ReasoningEffort = "low"`) | Summarization prompts don't need deep chain-of-thought; reduces latency |
+| **Prompt submission + session events** | `session.SendAsync(new MessageOptions { Prompt = prompt })`, `AssistantMessageEvent`, `AssistantMessageDeltaEvent`, `SessionIdleEvent`, `SessionErrorEvent` | Streams responses and waits for the session to go idle before capturing the final output |
 | **Session hooks** | `OnErrorOccurred`, `OnSessionStart`, `OnSessionEnd` | SDK-level error retry and session lifecycle logging without manual plumbing |
 | **ClientName** | All AI sessions (`ClientName = "newsletter-generator"`) | Tags requests with a stable application identity, which is useful for diagnostics and example code |
-| **Permission policy / tool restrictions** | All AI sessions (`AvailableTools = []`, `OnPermissionRequest = DenyUnexpectedPermissionRequest`) | Uses a least-privilege, fail-closed session policy because newsletter generation only needs text summarization, not tool access |
+| **Permission policy / tool restrictions** | All AI sessions (`AvailableTools = []`, `OnPermissionRequest = PermissionHandler.ApproveAll`) | Uses a least-privilege session policy because newsletter generation does not request tool access |
+| **Usage metrics** | `session.Rpc.Usage.GetMetricsAsync()`, `session.SessionId` | Captures prompt/output token usage for each operation and ties it to the session ID |
 | **PingAsync** | `doctor` command + startup status | Lightweight connectivity check without creating a full session |
 | **ListModelsAsync** | Model selection, `list-models` command | Enumerate available models for interactive selection |
 | **System messages** | `SystemMessageMode.Replace` on all sessions | Full control over system prompt for editorial tone and output formatting |
