@@ -66,12 +66,6 @@ public partial class NewsletterService(
         }
     };
 
-<<<<<<< HEAD
-    private SessionConfig CreateSessionConfig(
-        string? model,
-        string systemMessageContent,
-        bool? enableInfiniteSessions = null) => new()
-=======
     internal static string ResolveReasoningEffort(string operationProfile) => operationProfile switch
     {
         NewsletterTitleOperation => "low",
@@ -84,8 +78,11 @@ public partial class NewsletterService(
         _ => "medium"
     };
 
-    private SessionConfig CreateSessionConfig(string? model, string systemMessageContent, string reasoningEffort) => new()
->>>>>>> origin/main
+    private SessionConfig CreateSessionConfig(
+        string? model,
+        string systemMessageContent,
+        string reasoningEffort,
+        bool? enableInfiniteSessions = null) => new()
     {
         AvailableTools = [],
         ClientName = CopilotClientName,
@@ -104,14 +101,11 @@ public partial class NewsletterService(
         }
     };
 
-<<<<<<< HEAD
     private async Task<StartedSession> CreateStartedSessionAsync(
         string? model,
+        string operationProfile,
         string systemMessageContent,
         bool? enableInfiniteSessions = null)
-=======
-    private async Task<StartedSession> CreateStartedSessionAsync(string? model, string operationProfile, string systemMessageContent)
->>>>>>> origin/main
     {
         var reasoningEffort = ResolveReasoningEffort(operationProfile);
         logger.LogInformation(
@@ -125,12 +119,7 @@ public partial class NewsletterService(
 
         try
         {
-<<<<<<< HEAD
-            var session = await client.CreateSessionAsync(
-                CreateSessionConfig(model, systemMessageContent, enableInfiniteSessions));
-=======
-            var session = await client.CreateSessionAsync(CreateSessionConfig(model, systemMessageContent, reasoningEffort));
->>>>>>> origin/main
+            var session = await client.CreateSessionAsync(CreateSessionConfig(model, systemMessageContent, reasoningEffort, enableInfiniteSessions));
             return new StartedSession(client, session);
         }
         catch
@@ -140,7 +129,6 @@ public partial class NewsletterService(
         }
     }
 
-<<<<<<< HEAD
     public async ValueTask DisposeAsync()
     {
         if (revisionSession is null)
@@ -149,7 +137,8 @@ public partial class NewsletterService(
         await revisionSession.DisposeAsync();
         revisionSession = null;
         revisionSessionModel = null;
-=======
+    }
+
     internal static IReadOnlyList<string> BuildModelFallbackOrder(string? selectedModel, string? configuredFallbacks = null)
     {
         static IEnumerable<string> ParseConfiguredFallbacks(string? value) =>
@@ -197,7 +186,6 @@ public partial class NewsletterService(
         }
 
         return false;
->>>>>>> origin/main
     }
 
     public async Task<string> GenerateWelcomeSummaryAsync(
@@ -601,13 +589,7 @@ public partial class NewsletterService(
         logger.LogInformation("Revising newsletter markdown (model={Model})", model);
         AnsiConsole.MarkupLine("[grey]Applying revisions...[/]");
 
-<<<<<<< HEAD
         const string revisionSystemPrompt =
-=======
-        await using var copilot = await CreateStartedSessionAsync(
-            model,
-            RevisionOperation,
->>>>>>> origin/main
             """
             You revise existing markdown newsletters for an internal developer audience.
             Keep the tone direct, factual, and concise.
@@ -649,6 +631,7 @@ public partial class NewsletterService(
 
                 revisionSession = await CreateStartedSessionAsync(
                     model,
+                    RevisionOperation,
                     revisionSystemPrompt,
                     enableInfiniteSessions: true);
                 revisionSessionModel = model;
@@ -660,6 +643,7 @@ public partial class NewsletterService(
         {
             singleUseSession = await CreateStartedSessionAsync(
                 model,
+                RevisionOperation,
                 revisionSystemPrompt,
                 enableInfiniteSessions: false);
             session = singleUseSession.Session;
