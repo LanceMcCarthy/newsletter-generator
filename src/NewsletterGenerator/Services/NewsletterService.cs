@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using NewsletterGenerator;
 using GitHub.Copilot;
@@ -9,6 +11,7 @@ namespace NewsletterGenerator.Services;
 
 public partial class NewsletterService(
     ILogger<NewsletterService> logger,
+    string? runContextKey = null,
     bool useInfiniteSessionsForRevisions = false) : IAsyncDisposable
 {
     private const string CopilotClientName = "newsletter-generator";
@@ -101,10 +104,34 @@ public partial class NewsletterService(
         }
     };
 
+    private ResumeSessionConfig CreateResumeSessionConfig(string? model, string systemMessageContent) => new()
+    {
+        AvailableTools = [],
+        ClientName = CopilotClientName,
+        OnPermissionRequest = PermissionHandler.ApproveAll,
+        Model = model,
+        Streaming = true,
+        ReasoningEffort = null,
+        Hooks = CreateSessionHooks(),
+        SystemMessage = new SystemMessageConfig
+        {
+            Mode = SystemMessageMode.Replace,
+            Content = systemMessageContent
+        }
+    };
+
+    internal static string BuildSessionId(string runContext, string workflowStep, string? model)
+    {
+        var key = $"{runContext}|{workflowStep}|{model ?? "default"}";
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key))).ToLowerInvariant();
+        return $"newsletter-generator-{hash[..24]}";
+    }
+
     private async Task<StartedSession> CreateStartedSessionAsync(
         string? model,
         string operationProfile,
         string systemMessageContent,
+        string? workflowStep = null,
         bool? enableInfiniteSessions = null)
     {
         var reasoningEffort = ResolveReasoningEffort(operationProfile);
@@ -119,6 +146,46 @@ public partial class NewsletterService(
 
         try
         {
+        if (!string.IsNullOrWhiteSpace(runContextKey) && !string.IsNullOrWhiteSpace(workflowStep))
+            {
+                var filter = new SessionListFilter
+                {
+                    WorkingDirectory = Environment.CurrentDirectory
+                };
+
+                var sessions = await client.ListSessionsAsync(filter);
+                var lastSessionId = await client.GetLastSessionIdAsync();
+                var targetSessionId = BuildSessionId(runContextKey, workflowStep, model);
+                var hasMatch = sessions.Any(session => string.Equals(session.SessionId, targetSessionId, StringComparison.Ordinal));
+
+                logger.LogInformation(
+                    "Session selection for {WorkflowStep}: context={RunContext}, model={Model}, target={TargetSessionId}, listed={ListedCount}, last={LastSessionId}",
+                    workflowStep, runContextKey, model ?? "default", targetSessionId, sessions.Count, lastSessionId ?? "<none>");
+
+                if (hasMatch)
+                {
+                    logger.LogInformation(
+                        "Resuming prior session for {WorkflowStep} (sessionId={SessionId}, matchedLast={MatchedLast})",
+                        workflowStep, targetSessionId, string.Equals(lastSessionId, targetSessionId, StringComparison.Ordinal));
+
+                    var resumedSession = await client.ResumeSessionAsync(targetSessionId, CreateResumeSessionConfig(model, systemMessageContent));
+                    return new StartedSession(client, resumedSession);
+                }
+
+                var newSessionConfig = CreateSessionConfig(model, systemMessageContent, reasoningEffort, enableInfiniteSessions);
+                newSessionConfig.SessionId = targetSessionId;
+
+                logger.LogInformation(
+                    "Creating new session for {WorkflowStep} (sessionId={SessionId}, reason=No matching session found)",
+                    workflowStep, targetSessionId);
+
+                var createdSession = await client.CreateSessionAsync(newSessionConfig);
+                return new StartedSession(client, createdSession);
+            }
+
+            logger.LogInformation(
+                "Creating new session (resume disabled; runContext={RunContext}, workflowStep={WorkflowStep})",
+                runContextKey ?? "<none>", workflowStep ?? "<none>");
             var session = await client.CreateSessionAsync(CreateSessionConfig(model, systemMessageContent, reasoningEffort, enableInfiniteSessions));
             return new StartedSession(client, session);
         }
@@ -236,7 +303,8 @@ public partial class NewsletterService(
                     - Output ONLY the paragraph text — no greeting, no markdown, no preamble
                     - Do NOT include meta-commentary like "Here's a summary" or "Based on the material"
                     - Start directly with the content
-                    """);
+                    """,
+            "welcome-summary");
 
         var prompt = $"""
             Write an opening paragraph for the GitHub Copilot CLI & SDK weekly newsletter
@@ -297,7 +365,8 @@ public partial class NewsletterService(
                     You generate a short, descriptive title for a weekly developer newsletter.
                     The title should highlight 2-3 of the most important items from the week.
                     Keep it factual and specific - use actual feature/product names.
-                    """);
+                    """,
+            "newsletter-title");
 
         var prompt = $"""
             Generate a title for this week's {newsletterLabel} newsletter.
@@ -392,7 +461,8 @@ public partial class NewsletterService(
                     - Do NOT include phrases like "Based on my review", "Here's the content", etc.
                     - Start directly with the section header or content
                     - NO code fences, NO explanations
-                    """);
+                    """,
+            "news-announcements");
 
         var prompt = BuildNewsPrompt(changelogEntries, blogEntries, weekStart, weekEnd);
         var result = await SendPromptAsync(copilot.Session, prompt, "News and Announcements");
@@ -479,7 +549,8 @@ public partial class NewsletterService(
                         - Output ONLY the requested Markdown — no preamble, no commentary, no code fences
                         - Do NOT include meta-statements like "Here are the highlights" or "Based on my analysis"
                         - Start directly with the section header (## GitHub Copilot CLI Updates or ## GitHub Copilot SDK Updates)
-                        """);
+                        """,
+                $"{productName}-summary");
 
             for (var modelIndex = 0; modelIndex < fallbackOrder.Count; modelIndex++)
             {
@@ -773,7 +844,8 @@ public partial class NewsletterService(
                      If no Insiders features are available, omit this entire section.>
 
                     Release notes: [VS Code Insiders](URL)
-                    """);
+                    """,
+            "vscode-newsletter");
 
         var featureLines = string.Join('\n', releaseNotes.Features.Select(f =>
             $"- [{f.Category}] {f.Description}{(string.IsNullOrWhiteSpace(f.Link) ? string.Empty : $" ({f.Link})")}"));
@@ -895,7 +967,7 @@ public partial class NewsletterService(
         }
 
         AnsiConsole.MarkupLine($"[grey]Generating {Markup.Escape(displayLabel)}...[/]");
-        await using var copilot = await CreateStartedSessionAsync(model, SectionSynthesisOperation, systemMessage);
+        await using var copilot = await CreateStartedSessionAsync(model, SectionSynthesisOperation, systemMessage, cacheKey);
         var result = await SendPromptAsync(copilot.Session, prompt, displayLabel);
         await cache.SaveCacheAsync(cacheKey, result, sourceHash);
         return result;
