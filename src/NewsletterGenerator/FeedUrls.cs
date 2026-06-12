@@ -2,9 +2,10 @@ namespace NewsletterGenerator;
 
 internal static class FeedUrls
 {
-    // GitHub Copilot CLI/SDK sources
+    // GitHub Copilot CLI/SDK/app sources
     public const string CliAtom = "https://github.com/github/copilot-cli/releases.atom";
     public const string SdkAtom = "https://github.com/github/copilot-sdk/releases.atom";
+    public const string AppAtom = "https://github.com/github/app/releases.atom";
     public const string ChangelogCopilot = "https://github.blog/changelog/label/copilot/feed/";
     public const string GitHubBlog = "https://github.blog/feed/";
     public const string VSCodeBlog = "https://code.visualstudio.com/feed.xml";
