@@ -554,6 +554,7 @@ internal static partial class NewsletterApp
         {
             ("cli",         "Copilot CLI releases",  FeedUrls.CliAtom,              false, 0,    "Releases"),
             ("sdk",         "Copilot SDK releases",  FeedUrls.SdkAtom,              false, 0,    "Releases"),
+            ("app",         "Copilot app releases",  FeedUrls.AppAtom,              false, 0,    "Releases"),
             ("changelog",   "Copilot changelog",     FeedUrls.ChangelogCopilot,     false, 1500, "Feed items"),
             ("vscodeBlog",  "VS Code blog",          FeedUrls.VSCodeBlog,           true,  800,  "Blog posts"),
             ("dotNet",      ".NET blog",             FeedUrls.DotNetBlog,           true,  800,  "Blog posts"),
@@ -609,6 +610,7 @@ internal static partial class NewsletterApp
 
         var cliReleases = Entries("cli");
         var sdkReleases = Entries("sdk");
+        var appReleases = Entries("app");
         var changelogEntries = Entries("changelog");
         var vscodeBlogEntries = Entries("vscodeBlog");
         var dotNetBlogEntries = Entries("dotNet");
@@ -625,15 +627,16 @@ internal static partial class NewsletterApp
         var youtubeGitHubEntries = Entries("ytGitHub");
         var youtubeMicrosoftDevEntries = Entries("ytMSDev");
 
-        // Consolidate CLI/SDK prereleases
+        // Consolidate CLI/SDK/app prereleases
         (cliReleases, _) = ConsolidateAndTrack("Copilot CLI", cliReleases, feedResults.GetValueOrDefault("cli"), metrics);
         (sdkReleases, _) = ConsolidateAndTrack("Copilot SDK", sdkReleases, feedResults.GetValueOrDefault("sdk"), metrics);
+        (appReleases, _) = ConsolidateAndTrack("Copilot app", appReleases, feedResults.GetValueOrDefault("app"), metrics);
 
         // Track source counts and build summary table
         foreach (var descriptor in feedDescriptors)
         {
             var result = feedResults.GetValueOrDefault(descriptor.Key);
-            var entries = descriptor.Key is "cli" ? cliReleases : descriptor.Key is "sdk" ? sdkReleases : Entries(descriptor.Key);
+            var entries = descriptor.Key is "cli" ? cliReleases : descriptor.Key is "sdk" ? sdkReleases : descriptor.Key is "app" ? appReleases : Entries(descriptor.Key);
             metrics.SourceCounts.Add(new SourceCount(
                 descriptor.Label,
                 (result?.TotalItems ?? 0).ToString(),
@@ -666,7 +669,7 @@ internal static partial class NewsletterApp
 
         foreach (var descriptor in feedDescriptors)
         {
-            var entries = descriptor.Key is "cli" ? cliReleases : descriptor.Key is "sdk" ? sdkReleases : Entries(descriptor.Key);
+            var entries = descriptor.Key is "cli" ? cliReleases : descriptor.Key is "sdk" ? sdkReleases : descriptor.Key is "app" ? appReleases : Entries(descriptor.Key);
             table.AddRow($"[cornflowerblue]{Markup.Escape(descriptor.Label)}[/]", FormatCountCell(entries.Count));
         }
         table.AddRow("[cornflowerblue]VS Code Insiders[/]", FormatCountCell(vscodeFeatureCount));
@@ -722,7 +725,7 @@ internal static partial class NewsletterApp
 
             var copilotWork = RunTrackedTaskAsync(copilotTask, copilotLabel,
                 () => newsletterService.GenerateDevTechCopilotSectionAsync(
-                    cliReleases, sdkReleases, changelogEntries,
+                    cliReleases, sdkReleases, appReleases, changelogEntries,
                     weekStart, weekEnd, cache, selectedModel),
                 metrics, "Generate: Copilot section");
 

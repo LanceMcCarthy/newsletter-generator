@@ -982,18 +982,19 @@ public partial class NewsletterService(
     public async Task<string> GenerateDevTechCopilotSectionAsync(
         List<ReleaseEntry> cliReleases,
         List<ReleaseEntry> sdkReleases,
+        List<ReleaseEntry> appReleases,
         List<ReleaseEntry> changelogEntries,
         DateOnly weekStart,
         DateOnly weekEnd,
         CacheService cache,
         string? model = null)
     {
-        if (cliReleases.Count == 0 && sdkReleases.Count == 0 && changelogEntries.Count == 0)
+        if (cliReleases.Count == 0 && sdkReleases.Count == 0 && appReleases.Count == 0 && changelogEntries.Count == 0)
             return string.Empty;
 
         var sb = new StringBuilder();
         sb.AppendLine($"""
-            Generate the "Copilot CLI & SDK" section for a DevTech MVP newsletter covering {weekStart:MMMM d} to {weekEnd:MMMM d, yyyy}.
+            Generate the "Copilot CLI, SDK & app" section for a DevTech MVP newsletter covering {weekStart:MMMM d} to {weekEnd:MMMM d, yyyy}.
 
             Write one summary sentence followed by 3-5 bullets covering the most important changes.
             Each bullet: - **[Short label](url)** - description.
@@ -1008,13 +1009,13 @@ public partial class NewsletterService(
             Output exactly this format:
 
             ---
-            ## Copilot CLI & SDK
+            ## Copilot CLI, SDK & app
 
             [summary sentence]
 
             - **[Label](url)** - description.
 
-            Release notes: [copilot-cli](https://github.com/github/copilot-cli/releases) / [copilot-sdk](https://github.com/github/copilot-sdk/releases)
+            Release notes: [cli](https://github.com/github/copilot-cli/releases) / [sdk](https://github.com/github/copilot-sdk/releases) / [app](https://github.com/github/app/releases)
 
             IMPORTANT: Always end the section with the "Release notes:" line shown above, exactly as written.
 
@@ -1023,9 +1024,10 @@ public partial class NewsletterService(
             """);
         AppendReleases(sb, "GitHub Copilot CLI releases", cliReleases);
         AppendReleases(sb, "GitHub Copilot SDK releases", sdkReleases);
+        AppendReleases(sb, "GitHub Copilot app releases", appReleases);
         AppendBlogEntries(sb, "GitHub Copilot Changelog", changelogEntries);
 
-        var sourceData = System.Text.Json.JsonSerializer.Serialize(new { cliReleases, sdkReleases, changelogEntries, model });
+        var sourceData = System.Text.Json.JsonSerializer.Serialize(new { cliReleases, sdkReleases, appReleases, changelogEntries, model });
         return await GenerateCachedSectionAsync("devtech-copilot", sourceData,
             DevTechSectionSystem, sb.ToString(), cache, model, "Copilot CLI & SDK section");
     }
