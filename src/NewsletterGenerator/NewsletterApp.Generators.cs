@@ -256,16 +256,18 @@ internal static partial class NewsletterApp
         RunMetrics metrics,
         bool debug)
     {
-        var defaultTitle = "GitHub Copilot CLI/SDK Weekly Newsletter";
+        var defaultTitle = "GitHub Copilot CLI/SDK/app Weekly Newsletter";
         var feedService = new AtomFeedService(loggerFactory.CreateLogger<AtomFeedService>(), feedCache: cache);
         var log = loggerFactory.CreateLogger("CopilotNewsletter");
 
         List<ReleaseEntry> cliReleases = [];
         List<ReleaseEntry> sdkReleases = [];
+        List<ReleaseEntry> appReleases = [];
         List<ReleaseEntry> changelogEntries = [];
         List<ReleaseEntry> blogEntries = [];
         FeedFetchResult? cliFetchResult = null;
         FeedFetchResult? sdkFetchResult = null;
+        FeedFetchResult? appFetchResult = null;
         FeedFetchResult? changelogFetchResult = null;
         FeedFetchResult? blogFetchResult = null;
 
@@ -273,11 +275,13 @@ internal static partial class NewsletterApp
         {
             const string cliLabel = "Copilot CLI releases";
             const string sdkLabel = "Copilot SDK releases";
+            const string appLabel = "Copilot app releases";
             const string changelogLabel = "Copilot changelog feed";
             const string blogLabel = "GitHub blog feed";
 
             var cliTask = AddInactiveTask(ctx, cliLabel);
             var sdkTask = AddInactiveTask(ctx, sdkLabel);
+            var appTask = AddInactiveTask(ctx, appLabel);
             var changelogTask = AddInactiveTask(ctx, changelogLabel);
             var blogTask = AddInactiveTask(ctx, blogLabel);
 
@@ -296,6 +300,14 @@ internal static partial class NewsletterApp
                 metrics,
                 "Fetch: Copilot SDK releases");
             sdkReleases = sdkFetchResult.Entries;
+
+            appFetchResult = await RunTrackedTaskAsync(
+                appTask,
+                appLabel,
+                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.AppAtom, weekStart, weekEnd),
+                metrics,
+                "Fetch: Copilot app releases");
+            appReleases = appFetchResult.Entries;
 
             changelogFetchResult = await RunTrackedTaskAsync(
                 changelogTask,
@@ -326,9 +338,10 @@ internal static partial class NewsletterApp
 
         (cliReleases, var cliConsolidation) = ConsolidateAndTrack("Copilot CLI releases", cliReleases, cliFetchResult, metrics);
         (sdkReleases, var sdkConsolidation) = ConsolidateAndTrack("Copilot SDK releases", sdkReleases, sdkFetchResult, metrics);
+        (appReleases, var appConsolidation) = ConsolidateAndTrack("Copilot app releases", appReleases, appFetchResult, metrics);
 
-        log.LogInformation("ConsolidatePrereleases: CLI -> {CliAfter}, SDK -> {SdkAfter}",
-            cliReleases.Count, sdkReleases.Count);
+        log.LogInformation("ConsolidatePrereleases: CLI -> {CliAfter}, SDK -> {SdkAfter}, app -> {AppAfter}",
+            cliReleases.Count, sdkReleases.Count, appReleases.Count);
 
         metrics.SourceCounts.Add(new SourceCount(
             "Copilot CLI releases",
@@ -342,6 +355,12 @@ internal static partial class NewsletterApp
             (sdkFetchResult?.InRangeItems ?? 0).ToString(),
             sdkReleases.Count.ToString(),
             $"{sdkFetchResult?.MatchedItems ?? 0} matched; prereleases {sdkConsolidation.DetectedPrereleases} ({sdkConsolidation.RolledUpCount} rolled up, {sdkConsolidation.SkippedCount} skipped)"));
+        metrics.SourceCounts.Add(new SourceCount(
+            "Copilot app releases",
+            (appFetchResult?.TotalItems ?? 0).ToString(),
+            (appFetchResult?.InRangeItems ?? 0).ToString(),
+            appReleases.Count.ToString(),
+            $"{appFetchResult?.MatchedItems ?? 0} matched; prereleases {appConsolidation.DetectedPrereleases} ({appConsolidation.RolledUpCount} rolled up, {appConsolidation.SkippedCount} skipped)"));
         metrics.SourceCounts.Add(new SourceCount(
             "Changelog (Copilot)",
             (changelogFetchResult?.TotalItems ?? 0).ToString(),
@@ -364,13 +383,14 @@ internal static partial class NewsletterApp
 
         table.AddRow("[cornflowerblue]Copilot CLI releases[/]", FormatCountCell(cliReleases.Count), FormatItemsCell(cliReleases));
         table.AddRow("[cornflowerblue]Copilot SDK releases[/]", FormatCountCell(sdkReleases.Count), FormatItemsCell(sdkReleases));
+        table.AddRow("[cornflowerblue]Copilot app releases[/]", FormatCountCell(appReleases.Count), FormatItemsCell(appReleases));
         table.AddRow("[cornflowerblue]Changelog (Copilot)[/]", FormatCountCell(changelogEntries.Count), FormatItemsCell(changelogEntries));
         table.AddRow("[cornflowerblue]Blog (Copilot/CLI)[/]", FormatCountCell(blogEntries.Count), FormatItemsCell(blogEntries));
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
 
-        if (cliReleases.Count == 0 && sdkReleases.Count == 0 && changelogEntries.Count == 0 && blogEntries.Count == 0)
+        if (cliReleases.Count == 0 && sdkReleases.Count == 0 && appReleases.Count == 0 && changelogEntries.Count == 0 && blogEntries.Count == 0)
         {
             log.LogWarning("No items found for date range {Start} to {End}", weekStart, weekEnd);
             AnsiConsole.MarkupLine($"[yellow]⚠[/] No items found in [bold]{weekStart:yyyy-MM-dd}[/] to [bold]{weekEnd:yyyy-MM-dd}[/].");
@@ -401,7 +421,7 @@ internal static partial class NewsletterApp
         await AnsiConsole.Progress().AutoClear(false).HideCompleted(false).StartAsync(async ctx =>
         {
             const string newsLabel = "News and announcements";
-            const string releaseLabel = "CLI & SDK updates";
+            const string releaseLabel = "CLI, SDK & app updates";
             const string welcomeLabel = "Welcome summary";
             const string titleLabel = "Newsletter title";
 
@@ -433,12 +453,13 @@ internal static partial class NewsletterApp
                     () => newsletterService.GenerateReleaseSectionAsync(
                     cliReleases,
                     sdkReleases,
+                    appReleases,
                     weekStart,
                     weekEnd,
                     cache,
                     selectedModel),
                     metrics,
-                    "Generate: CLI & SDK updates");
+                    "Generate: CLI, SDK & app updates");
 
                 await Task.WhenAll(newsSectionTask, releaseSectionTask);
 
@@ -491,7 +512,7 @@ internal static partial class NewsletterApp
         contentBuilder.AppendLine("Welcome");
         contentBuilder.AppendLine("--------");
         contentBuilder.AppendLine();
-        contentBuilder.AppendLine("This is your weekly update for GitHub Copilot CLI & SDK! Feel free to forward internally and encourage your co-workers to subscribe at [https://aka.ms/copilot-cli-insiders/join](https://aka.ms/copilot-cli-insiders/join) and forward this newsletter around!");
+        contentBuilder.AppendLine("This is your weekly update for GitHub Copilot CLI, SDK, and app! Feel free to forward internally and encourage your co-workers to subscribe at [https://aka.ms/copilot-cli-insiders/join](https://aka.ms/copilot-cli-insiders/join) and forward this newsletter around!");
         contentBuilder.AppendLine();
         contentBuilder.AppendLine(welcomeSummary);
         contentBuilder.AppendLine();

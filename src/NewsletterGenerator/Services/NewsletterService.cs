@@ -86,23 +86,23 @@ public partial class NewsletterService(
         string systemMessageContent,
         string reasoningEffort,
         bool? enableInfiniteSessions = null) => new()
-    {
-        AvailableTools = [],
-        ClientName = CopilotClientName,
-        OnPermissionRequest = PermissionHandler.ApproveAll,
-        Model = model,
-        Streaming = true,
-        ReasoningEffort = reasoningEffort,
-        Hooks = CreateSessionHooks(),
-        InfiniteSessions = enableInfiniteSessions.HasValue
+        {
+            AvailableTools = [],
+            ClientName = CopilotClientName,
+            OnPermissionRequest = PermissionHandler.ApproveAll,
+            Model = model,
+            Streaming = true,
+            ReasoningEffort = reasoningEffort,
+            Hooks = CreateSessionHooks(),
+            InfiniteSessions = enableInfiniteSessions.HasValue
             ? new InfiniteSessionConfig { Enabled = enableInfiniteSessions.Value }
             : null,
-        SystemMessage = new SystemMessageConfig
-        {
-            Mode = SystemMessageMode.Replace,
-            Content = systemMessageContent
-        }
-    };
+            SystemMessage = new SystemMessageConfig
+            {
+                Mode = SystemMessageMode.Replace,
+                Content = systemMessageContent
+            }
+        };
 
     private ResumeSessionConfig CreateResumeSessionConfig(string? model, string systemMessageContent) => new()
     {
@@ -146,7 +146,7 @@ public partial class NewsletterService(
 
         try
         {
-        if (!string.IsNullOrWhiteSpace(runContextKey) && !string.IsNullOrWhiteSpace(workflowStep))
+            if (!string.IsNullOrWhiteSpace(runContextKey) && !string.IsNullOrWhiteSpace(workflowStep))
             {
                 var filter = new SessionListFilter
                 {
@@ -624,26 +624,32 @@ public partial class NewsletterService(
     public async Task<string> GenerateReleaseSectionAsync(
         List<ReleaseEntry> cliReleases,
         List<ReleaseEntry> sdkReleases,
+        List<ReleaseEntry> appReleases,
         DateOnly weekStart,
         DateOnly weekEnd,
         CacheService cache,
         string? model = null)
     {
-        logger.LogInformation("GenerateReleaseSectionAsync: CLI={CliCount} releases, SDK={SdkCount} releases",
-            cliReleases.Count, sdkReleases.Count);
+        logger.LogInformation("GenerateReleaseSectionAsync: CLI={CliCount} releases, SDK={SdkCount} releases, app={AppCount} releases",
+            cliReleases.Count, sdkReleases.Count, appReleases.Count);
 
-        // Generate CLI and SDK summaries separately (with caching)
+        // Generate CLI, SDK, and app summaries separately (with caching)
         var cliSummary = await GenerateProductReleaseAsync("GitHub Copilot CLI", cliReleases, weekStart, weekEnd, cache, model);
         logger.LogInformation("CLI summary result: {Length} chars, empty={IsEmpty}", cliSummary.Length, string.IsNullOrWhiteSpace(cliSummary));
 
         var sdkSummary = await GenerateProductReleaseAsync("GitHub Copilot SDK", sdkReleases, weekStart, weekEnd, cache, model);
         logger.LogInformation("SDK summary result: {Length} chars, empty={IsEmpty}", sdkSummary.Length, string.IsNullOrWhiteSpace(sdkSummary));
 
-        // Combine into final sections (two top-level H2 headings, no wrapper)
+        var appSummary = await GenerateProductReleaseAsync("GitHub Copilot app", appReleases, weekStart, weekEnd, cache, model);
+        logger.LogInformation("App summary result: {Length} chars, empty={IsEmpty}", appSummary.Length, string.IsNullOrWhiteSpace(appSummary));
+
+        // Combine into final sections (top-level H2 headings, no wrapper)
         var sb = new StringBuilder();
         sb.Append(cliSummary);
         sb.AppendLine();
         sb.Append(sdkSummary);
+        sb.AppendLine();
+        sb.Append(appSummary);
 
         var combined = sb.ToString();
         logger.LogInformation("Combined release section: {Length} chars", combined.Length);
@@ -1541,7 +1547,9 @@ public partial class NewsletterService(
         DateOnly weekEnd)
     {
         var sb = new StringBuilder();
-        var repoName = productName.ToLower().Replace("github ", "").Replace(" ", "-");
+        var repoName = productName.Equals("GitHub Copilot app", StringComparison.OrdinalIgnoreCase)
+            ? "app"
+            : productName.ToLower().Replace("github ", "").Replace(" ", "-");
 
         sb.AppendLine($"""
             Generate the "{productName}" section for a weekly newsletter
