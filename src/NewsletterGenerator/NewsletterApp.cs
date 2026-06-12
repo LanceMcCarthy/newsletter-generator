@@ -332,7 +332,7 @@ internal static partial class NewsletterApp
                 .Title("[yellow]Which newsletter do you want to generate?[/]")
                 .PageSize(6)
                 .AddChoices([
-                    "GitHub Copilot CLI/SDK",
+                    "GitHub Copilot CLI/SDK/app",
                     "VS Code",
                     "DevTech MVP"
                 ]));
@@ -369,7 +369,7 @@ internal static partial class NewsletterApp
     {
         NewsletterType.VSCode => "VS Code",
         NewsletterType.DevTechMVP => "DevTech MVP",
-        _ => "GitHub Copilot CLI/SDK"
+        _ => "GitHub Copilot CLI/SDK/app"
     };
 
     private static string GetNewsletterSlug(NewsletterType type) => type switch
