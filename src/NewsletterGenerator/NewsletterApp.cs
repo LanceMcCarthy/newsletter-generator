@@ -156,6 +156,7 @@ internal static partial class NewsletterApp
                 content = PrefixNewsletterName(content, title, weekStartDate, weekEndDate, selectedModel);
                 content = NormalizeDashes(content);
                 content = RemoveReleaseNotesHrules(content);
+                content = StripMarkdownFence(content);
 
                 if (!nonInteractive)
                 {
@@ -180,6 +181,7 @@ internal static partial class NewsletterApp
                         metrics.CopilotUsage.AddRange(newsletterService.GetUsageMetricsSnapshot());
                         content = NormalizeDashes(content);
                         content = RemoveReleaseNotesHrules(content);
+                        content = StripMarkdownFence(content);
                         revisionStopwatch.Stop();
 
                         metrics.StageSeconds["Apply revisions"] =
@@ -473,6 +475,18 @@ internal static partial class NewsletterApp
 
     private static string NormalizeDashes(string text)
         => text.Replace('\u2014', '-').Replace('\u2013', '-');
+
+    private static string StripMarkdownFence(string text)
+    {
+        var trimmed = text.Trim();
+        if (trimmed.StartsWith("```markdown", StringComparison.OrdinalIgnoreCase))
+            trimmed = trimmed["```markdown".Length..].TrimStart('\n', '\r');
+        else if (trimmed.StartsWith("```", StringComparison.Ordinal))
+            trimmed = trimmed[3..].TrimStart('\n', '\r');
+        if (trimmed.EndsWith("```", StringComparison.Ordinal))
+            trimmed = trimmed[..^3].TrimEnd();
+        return trimmed;
+    }
 
     /// <summary>
     /// Removes stray "---" horizontal rules that appear on the line immediately
