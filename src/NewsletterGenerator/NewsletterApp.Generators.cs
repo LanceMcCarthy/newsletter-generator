@@ -636,7 +636,13 @@ internal static partial class NewsletterApp
         foreach (var descriptor in feedDescriptors)
         {
             var result = feedResults.GetValueOrDefault(descriptor.Key);
-            var entries = descriptor.Key is "cli" ? cliReleases : descriptor.Key is "sdk" ? sdkReleases : descriptor.Key is "app" ? appReleases : Entries(descriptor.Key);
+            var entries = descriptor.Key switch
+            {
+                "cli" => cliReleases,
+                "sdk" => sdkReleases,
+                "app" => appReleases,
+                _ => Entries(descriptor.Key)
+            };
             metrics.SourceCounts.Add(new SourceCount(
                 descriptor.Label,
                 (result?.TotalItems ?? 0).ToString(),
@@ -669,7 +675,13 @@ internal static partial class NewsletterApp
 
         foreach (var descriptor in feedDescriptors)
         {
-            var entries = descriptor.Key is "cli" ? cliReleases : descriptor.Key is "sdk" ? sdkReleases : descriptor.Key is "app" ? appReleases : Entries(descriptor.Key);
+            var entries = descriptor.Key switch
+            {
+                "cli" => cliReleases,
+                "sdk" => sdkReleases,
+                "app" => appReleases,
+                _ => Entries(descriptor.Key)
+            };
             table.AddRow($"[cornflowerblue]{Markup.Escape(descriptor.Label)}[/]", FormatCountCell(entries.Count));
         }
         table.AddRow("[cornflowerblue]VS Code Insiders[/]", FormatCountCell(vscodeFeatureCount));

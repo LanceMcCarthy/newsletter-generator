@@ -430,20 +430,20 @@ public partial class NewsletterService(
                     and blog entries.
 
                     CRITICAL FILTERING RULES:
-                    - This newsletter is ONLY for GitHub Copilot CLI and GitHub Copilot SDK users
+                    - This newsletter is for GitHub Copilot CLI, SDK, and app users
                     - EXCLUDE: General IDE features, VS Code extensions, JetBrains plugins, general Copilot 
-                      features that don't involve CLI or SDK
-                    - EXCLUDE: General coding agent updates unless they specifically mention CLI/SDK integration
-                    - INCLUDE ONLY: Items that directly impact CLI or SDK users (new models available in CLI,
-                      network configuration changes for CLI, SDK updates, CLI-specific features)
+                      features that don't involve CLI, SDK, or the Copilot app
+                    - EXCLUDE: General coding agent updates unless they specifically mention CLI/SDK/app integration
+                    - INCLUDE ONLY: Items that directly impact CLI, SDK, or app users (new models available in CLI,
+                      network configuration changes for CLI, SDK updates, CLI-specific features, app-specific features)
                     - If unsure whether something is relevant, lean toward excluding it
                     
                     Focus on:
-                    - New model availability specifically in CLI/SDK
-                    - CLI or SDK-specific feature launches
-                    - Network, auth, or policy changes affecting CLI/SDK
-                    - Educational content specifically about CLI/SDK (courses, tutorials)
-                    - Breaking changes or important migration notices for CLI/SDK
+                    - New model availability specifically in CLI/SDK/app
+                    - CLI, SDK, or app-specific feature launches
+                    - Network, auth, or policy changes affecting CLI/SDK/app
+                    - Educational content specifically about CLI/SDK/app (courses, tutorials)
+                    - Breaking changes or important migration notices for CLI/SDK/app
 
                     TONE GUIDELINES:
                     - Professional and informative, not marketing-y
@@ -453,7 +453,7 @@ public partial class NewsletterService(
                     - Save enthusiasm for truly significant updates
                     - Write like you're informing colleagues, not selling a product
 
-                    Keep it concise but informative. If there's nothing relevant to CLI/SDK users, return an empty section.
+                    Keep it concise but informative. If there's nothing relevant to CLI/SDK/app users, return an empty section.
                     
                     OUTPUT REQUIREMENTS:
                     - Output ONLY the final newsletter Markdown content
@@ -477,6 +477,7 @@ public partial class NewsletterService(
 
     public async Task<string> GenerateProductReleaseAsync(
         string productName,
+        string repoSlug,
         List<ReleaseEntry> releases,
         DateOnly weekStart,
         DateOnly weekEnd,
@@ -506,7 +507,7 @@ public partial class NewsletterService(
         logger.LogInformation("Generating {Product} summary (model={Model}, hash={Hash})", productName, model, sourceHash[..12]);
         AnsiConsole.MarkupLine($"[grey]Generating {productName} summary...[/]");
 
-        var prompt = BuildProductPrompt(productName, releases, weekStart, weekEnd);
+        var prompt = BuildProductPrompt(productName, repoSlug, releases, weekStart, weekEnd);
         logger.LogDebug("{Product} prompt ({Length} chars):\n{Prompt}", productName, prompt.Length, prompt);
 
         const int maxAttempts = 3;
@@ -634,13 +635,13 @@ public partial class NewsletterService(
             cliReleases.Count, sdkReleases.Count, appReleases.Count);
 
         // Generate CLI, SDK, and app summaries separately (with caching)
-        var cliSummary = await GenerateProductReleaseAsync("GitHub Copilot CLI", cliReleases, weekStart, weekEnd, cache, model);
+        var cliSummary = await GenerateProductReleaseAsync("GitHub Copilot CLI", "copilot-cli", cliReleases, weekStart, weekEnd, cache, model);
         logger.LogInformation("CLI summary result: {Length} chars, empty={IsEmpty}", cliSummary.Length, string.IsNullOrWhiteSpace(cliSummary));
 
-        var sdkSummary = await GenerateProductReleaseAsync("GitHub Copilot SDK", sdkReleases, weekStart, weekEnd, cache, model);
+        var sdkSummary = await GenerateProductReleaseAsync("GitHub Copilot SDK", "copilot-sdk", sdkReleases, weekStart, weekEnd, cache, model);
         logger.LogInformation("SDK summary result: {Length} chars, empty={IsEmpty}", sdkSummary.Length, string.IsNullOrWhiteSpace(sdkSummary));
 
-        var appSummary = await GenerateProductReleaseAsync("GitHub Copilot app", appReleases, weekStart, weekEnd, cache, model);
+        var appSummary = await GenerateProductReleaseAsync("GitHub Copilot app", "app", appReleases, weekStart, weekEnd, cache, model);
         logger.LogInformation("App summary result: {Length} chars, empty={IsEmpty}", appSummary.Length, string.IsNullOrWhiteSpace(appSummary));
 
         // Combine into final sections (top-level H2 headings, no wrapper)
@@ -1029,7 +1030,7 @@ public partial class NewsletterService(
 
         var sourceData = System.Text.Json.JsonSerializer.Serialize(new { cliReleases, sdkReleases, appReleases, changelogEntries, model });
         return await GenerateCachedSectionAsync("devtech-copilot", sourceData,
-            DevTechSectionSystem, sb.ToString(), cache, model, "Copilot CLI & SDK section");
+            DevTechSectionSystem, sb.ToString(), cache, model, "Copilot CLI, SDK & app section");
     }
 
     public async Task<string> GenerateDevTechVSCodeSectionAsync(
@@ -1546,14 +1547,12 @@ public partial class NewsletterService(
 
     private static string BuildProductPrompt(
         string productName,
+        string repoSlug,
         List<ReleaseEntry> releases,
         DateOnly weekStart,
         DateOnly weekEnd)
     {
         var sb = new StringBuilder();
-        var repoName = productName.Equals("GitHub Copilot app", StringComparison.OrdinalIgnoreCase)
-            ? "app"
-            : productName.ToLower().Replace("github ", "").Replace(" ", "-");
 
         sb.AppendLine($"""
             Generate the "{productName}" section for a weekly newsletter
@@ -1593,7 +1592,7 @@ public partial class NewsletterService(
             - **Category label** - Combined thematic bullet covering multiple related changes
             - **Another label** - Another thematic bullet (e.g., "Terminal UX improvements" covering 10+ individual changes)
 
-            Release notes: [Releases - github/{repoName}](https://github.com/github/{repoName}/releases)
+            Release notes: [Releases - github/{repoSlug}](https://github.com/github/{repoSlug}/releases)
 
             Here is the raw source material for this week. Summarize from it — do not copy it verbatim:
 
@@ -1613,19 +1612,19 @@ public partial class NewsletterService(
         var sb = new StringBuilder();
 
         sb.AppendLine($"""
-            Generate a "News and Announcements" section for the GitHub Copilot CLI & SDK newsletter
+            Generate a "News and Announcements" section for the GitHub Copilot CLI, SDK & app newsletter
             covering the week of {weekStart:MMMM d} to {weekEnd:MMMM d, yyyy}.
 
-            IMPORTANT: This newsletter is ONLY for GitHub Copilot CLI and SDK users.
+            IMPORTANT: This newsletter is for GitHub Copilot CLI, SDK, and app users.
             
             STRICT FILTERING CRITERIA:
-            - ONLY include items that directly affect CLI or SDK users
+            - ONLY include items that directly affect CLI, SDK, or app users
             - EXCLUDE general GitHub Copilot features (IDE completions, chat in VS Code, etc.)
-            - EXCLUDE general coding agent updates unless they mention CLI/SDK integration
+            - EXCLUDE general coding agent updates unless they mention CLI/SDK/app integration
             - EXCLUDE VS Code, JetBrains, or other IDE-specific features
-            - INCLUDE model availability ONLY if it's mentioned in context of CLI/SDK
-            - INCLUDE network/auth/policy changes that affect CLI/SDK
-            - INCLUDE educational content specifically about CLI/SDK
+            - INCLUDE model availability ONLY if it's mentioned in context of CLI/SDK/app
+            - INCLUDE network/auth/policy changes that affect CLI/SDK/app
+            - INCLUDE educational content specifically about CLI/SDK/app
             
             LINKING REQUIREMENT:
             - ALWAYS link your summaries to the source blog posts/changelog entries
@@ -1637,7 +1636,7 @@ public partial class NewsletterService(
             1. GitHub Changelog entries labeled "copilot" - {changelogEntries.Count} entries
             2. GitHub Blog posts tagged with Copilot or CLI - {blogEntries.Count} posts
             
-            Most of these entries will NOT be relevant to CLI/SDK users. Filter aggressively.
+            Most of these entries will NOT be relevant to CLI/SDK/app users. Filter aggressively.
             If nothing is relevant, return an empty string (no section header).
             
             CRITICAL OUTPUT REQUIREMENT:
@@ -1651,18 +1650,19 @@ public partial class NewsletterService(
             - "GPT-5.3-Codex now available in GitHub Copilot CLI"
             - "Network configuration changes for Copilot coding agent (affects CLI)"
             - "New SDK release enables XYZ capability"
+            - "New GitHub Copilot app feature for XYZ"
             
             Examples of IRRELEVANT items (DO NOT INCLUDE):
             - "Copilot chat improvements in VS Code"
             - "New inline suggestions in JetBrains IDEs"
-            - "Copilot for Business now supports XYZ" (unless CLI/SDK specific)
-            - General model announcements without CLI/SDK context
+            - "Copilot for Business now supports XYZ" (unless CLI/SDK/app specific)
+            - General model announcements without CLI/SDK/app context
             
             Output format (if relevant content exists):
             ---
             ## News and Announcements
 
-            <engaging paragraphs of CLI/SDK-relevant news with links to source URLs>
+            <engaging paragraphs of CLI/SDK/app-relevant news with links to source URLs>
 
             Example: "We're excited to share that [Fast Mode for Claude Opus 4.6](https://github.blog/changelog/...) is beginning to roll out..."
 
