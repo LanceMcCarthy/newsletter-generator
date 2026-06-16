@@ -1,7 +1,7 @@
 # To get started with Dependabot version updates, you'll need to specify which
 # package ecosystems to update and where the package manifests are located.
 # Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file 
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 
 version: 2
 updates:
@@ -9,3 +9,17 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      # Group all minor and patch NuGet updates into a single PR.
+      nuget-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group major NuGet updates separately so breaking changes stay reviewable.
+      nuget-major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
