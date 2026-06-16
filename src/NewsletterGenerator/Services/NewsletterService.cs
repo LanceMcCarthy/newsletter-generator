@@ -1396,7 +1396,9 @@ public partial class NewsletterService(
             }
         });
 
-        var finalMessage = await session.SendAndWaitAsync(new MessageOptions { Prompt = prompt });
+        // The SDK default is 60 seconds, which isn't enough for high-reasoning operations.
+        // Use the built-in timeout overload: SendAndWaitAsync(MessageOptions, TimeSpan?, CancellationToken).
+        var finalMessage = await session.SendAndWaitAsync(new MessageOptions { Prompt = prompt }, TimeSpan.FromSeconds(180));
         var result = string.IsNullOrWhiteSpace(finalMessage?.Data.Content)
             ? latestResponse.ToString()
             : finalMessage.Data.Content;
