@@ -1,0 +1,40 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": ".NET: Build + Launch (Debug)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build-debug",
+      "program": "${workspaceFolder}/src/NewsletterGenerator/bin/Debug/net10.0/NewsletterGenerator.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "console": "integratedTerminal"
+    },
+    {
+      "name": ".NET: Build + Run (No Debug)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build-debug",
+      "program": "${workspaceFolder}/src/NewsletterGenerator/bin/Debug/net10.0/NewsletterGenerator.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "console": "integratedTerminal",
+      "noDebug": true
+    },
+    {
+      "name": ".NET: Publish + Launch (Release)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "publish-release",
+      "program": "${workspaceFolder}/src/NewsletterGenerator/bin/Release/net10.0/publish/NewsletterGenerator.exe",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "console": "integratedTerminal",
+      "noDebug": true
+    }
+  ]
+}
