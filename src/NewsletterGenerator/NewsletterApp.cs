@@ -126,6 +126,17 @@ internal static partial class NewsletterApp
                         metrics,
                         settings.Debug);
                 }
+                else if (selectedNewsletter == NewsletterType.FeatureBullets)
+                {
+                    (content, title) = await GenerateFeatureBulletsAsync(
+                        weekStartDate,
+                        weekEndDate,
+                        cache,
+                        selectedModel,
+                        loggerFactory,
+                        metrics,
+                        settings.Debug);
+                }
                 else
                 {
                     (content, title) = await GenerateCopilotNewsletterAsync(
@@ -323,6 +334,9 @@ internal static partial class NewsletterApp
             "devtech" => NewsletterType.DevTechMVP,
             "devtech-mvp" => NewsletterType.DevTechMVP,
             "mvp" => NewsletterType.DevTechMVP,
+            "bullets" => NewsletterType.FeatureBullets,
+            "slides" => NewsletterType.FeatureBullets,
+            "feature-bullets" => NewsletterType.FeatureBullets,
             _ => null
         };
     }
@@ -336,13 +350,15 @@ internal static partial class NewsletterApp
                 .AddChoices([
                     "GitHub Copilot CLI/SDK/app",
                     "VS Code",
-                    "DevTech MVP"
+                    "DevTech MVP",
+                    "Feature Bullet Points"
                 ]));
 
         return choice switch
         {
             "VS Code" => NewsletterType.VSCode,
             "DevTech MVP" => NewsletterType.DevTechMVP,
+            "Feature Bullet Points" => NewsletterType.FeatureBullets,
             _ => NewsletterType.CopilotCliSdk
         };
     }
@@ -371,6 +387,7 @@ internal static partial class NewsletterApp
     {
         NewsletterType.VSCode => "VS Code",
         NewsletterType.DevTechMVP => "DevTech MVP",
+        NewsletterType.FeatureBullets => "Feature Bullet Points",
         _ => "GitHub Copilot CLI/SDK/app"
     };
 
@@ -378,6 +395,7 @@ internal static partial class NewsletterApp
     {
         NewsletterType.VSCode => "vscode",
         NewsletterType.DevTechMVP => "devtech-mvp",
+        NewsletterType.FeatureBullets => "feature-bullets",
         _ => "copilot-cli-sdk"
     };
 
