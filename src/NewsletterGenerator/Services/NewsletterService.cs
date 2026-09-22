@@ -1098,7 +1098,8 @@ public partial class NewsletterService(
         No emoji in bullets.
         Keep bullet descriptions to one sentence, ideally under 25 words.
         OUTPUT: Only the requested Markdown section. No preamble, no commentary, no code fences.
-        Start directly with the --- separator and ## heading.
+        Start directly with the ## heading. Section separators are added when the
+        newsletter is assembled; do not add horizontal rules.
         """;
 
     private async Task<string> GenerateCachedSectionAsync(
@@ -1460,7 +1461,7 @@ public partial class NewsletterService(
             - 🚀 **[TypeScript 6.0 released](https://devblogs.microsoft.com/typescript/...)** - ships with isolated declarations
             - 🔧 **[Copilot CLI v1.2](https://github.com/github/copilot-cli/releases)** - adds streaming output
 
-            After the bullets, add a short transition sentence like:
+            After the bullets, add a short transition sentence like this (you can vary this):
             "That's it! You're caught up now! Details below if you want to know more."
 
             Output exactly this format:

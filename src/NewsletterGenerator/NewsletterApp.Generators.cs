@@ -715,7 +715,7 @@ internal static partial class NewsletterApp
         RunMetrics metrics,
         bool debug)
     {
-        var defaultTitle = "DevTech MVP Weekly Newsletter";
+        var defaultTitle = "Dev Tech Digest";
         var feedService = new AtomFeedService(loggerFactory.CreateLogger<AtomFeedService>(), feedCache: cache);
         var vscodeService = new VSCodeReleaseNotesService();
         var log = loggerFactory.CreateLogger("DevTechNewsletter");
@@ -992,13 +992,18 @@ internal static partial class NewsletterApp
 
         // Assemble final content
         var contentBuilder = new StringBuilder();
-        contentBuilder.AppendLine(welcomeSection);
+        contentBuilder.AppendLine(NormalizeDevTechWelcome(welcomeSection));
         contentBuilder.AppendLine();
 
         List<string> allBodySections = [copilotSection, vscodeSection, vsSection, .. majorReleaseSections, blogsSection, videosSection];
         foreach (var section in allBodySections.Where(s => !string.IsNullOrWhiteSpace(s)))
         {
-            contentBuilder.AppendLine(section);
+            var normalizedSection = NormalizeDevTechSection(section);
+            if (string.IsNullOrWhiteSpace(normalizedSection))
+                continue;
+
+            contentBuilder.AppendLine("---");
+            contentBuilder.AppendLine(normalizedSection);
             contentBuilder.AppendLine();
         }
 

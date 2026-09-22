@@ -386,7 +386,7 @@ internal static partial class NewsletterApp
     internal static string GetNewsletterLabel(NewsletterType type) => type switch
     {
         NewsletterType.VSCode => "VS Code",
-        NewsletterType.DevTechMVP => "DevTech MVP",
+        NewsletterType.DevTechMVP => "Dev Tech Digest",
         NewsletterType.FeatureBullets => "Feature Bullet Points",
         _ => "GitHub Copilot CLI/SDK/app"
     };
@@ -534,6 +534,40 @@ internal static partial class NewsletterApp
         }
 
         return string.Join('\n', result);
+    }
+
+    private static string NormalizeDevTechSection(string section)
+    {
+        var lines = section.Split('\n').ToList();
+
+        while (lines.Count > 0 &&
+               (string.IsNullOrWhiteSpace(lines[0]) ||
+                lines[0].Trim() == "---" ||
+                lines[0].Trim() == "* * * * *"))
+        {
+            lines.RemoveAt(0);
+        }
+
+        return string.Join('\n', lines).Trim();
+    }
+
+    private static string NormalizeDevTechWelcome(string welcome)
+    {
+        var lines = welcome.Split('\n').ToList();
+
+        while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[^1]))
+            lines.RemoveAt(lines.Count - 1);
+
+        while (lines.Count > 0 &&
+               (lines[^1].Trim() == "---" ||
+                lines[^1].Trim() == "* * * * *"))
+        {
+            lines.RemoveAt(lines.Count - 1);
+            while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[^1]))
+                lines.RemoveAt(lines.Count - 1);
+        }
+
+        return string.Join('\n', lines).Trim();
     }
 
     // ── Copilot startup & model selection ───────────────────────────────────
