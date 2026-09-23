@@ -645,17 +645,162 @@ public partial class NewsletterService(
         logger.LogInformation("App summary result: {Length} chars, empty={IsEmpty}", appSummary.Length, string.IsNullOrWhiteSpace(appSummary));
 
         // Combine into final sections (top-level H2 headings, no wrapper)
-        var sb = new StringBuilder();
-        sb.Append(cliSummary);
-        sb.AppendLine();
-        sb.Append(sdkSummary);
-        sb.AppendLine();
-        sb.Append(appSummary);
-
-        var combined = sb.ToString();
+        // Join with a blank line between sections. Trim trailing whitespace from each
+        // section first so the separator is exactly one blank line regardless of whether
+        // the model emitted a trailing newline (otherwise the next "## " heading can end
+        // up glued directly to the previous section's last bullet).
+        var combined = string.Join(
+            "\n\n",
+            new[] { cliSummary, sdkSummary, appSummary }
+                .Select(section => section.TrimEnd())
+                .Where(section => !string.IsNullOrWhiteSpace(section)));
         logger.LogInformation("Combined release section: {Length} chars", combined.Length);
         logger.LogDebug("Combined release section content:\n{Content}", combined);
         return combined;
+    }
+
+    public async Task<string> GenerateFeatureBulletsAsync(
+        List<ReleaseEntry> cliReleases,
+        List<ReleaseEntry> sdkReleases,
+        List<ReleaseEntry> appReleases,
+        List<VSCodeFeature> vscodeFeatures,
+        List<string> vscodeStableHighlights,
+        string? vscodeReleaseNotesUrl,
+        string? vscodeStableVersionUrl,
+        DateOnly weekStart,
+        DateOnly weekEnd,
+        CacheService cache,
+        string? model = null)
+    {
+        logger.LogInformation(
+            "GenerateFeatureBulletsAsync: CLI={Cli}, SDK={Sdk}, app={App}, vscodeStable={Stable}, vscodeInsiders={Insiders}",
+            cliReleases.Count, sdkReleases.Count, appReleases.Count, vscodeStableHighlights.Count, vscodeFeatures.Count);
+
+        var sourceDataJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            cliReleases,
+            sdkReleases,
+            appReleases,
+            vscodeFeatures,
+            vscodeStableHighlights,
+            vscodeReleaseNotesUrl,
+            vscodeStableVersionUrl,
+            model
+        });
+
+        const string systemMessage =
+            """
+            You are a technical editor producing terse slide bullet points from release notes for a developer audience.
+
+            You will receive release notes for four products. Output EXACTLY these four Markdown sections, in this order,
+            using these exact headings:
+
+            ## GitHub Copilot app
+            ## GitHub Copilot CLI
+            ## GitHub Copilot SDK
+            ## VS Code
+
+            STRICT BULLET FORMAT — every bullet MUST be:
+            - <emoji> **<feature>** <description>
+
+            Where:
+            - <feature> is a short bolded label of AT MOST 20 characters.
+            - <description> is a single clause of AT MOST 75 characters, no trailing period required.
+            - Exactly one space separates the emoji, the bold feature, and the description.
+            - There is NO colon after the bold feature.
+            - The emoji is chosen to match the topic (e.g., 🤖 AI, 🔧 tools, 🖥️ terminal, 🔒 security, 🧩 plugins, ⚙️ config).
+
+            CURATION RULES:
+            - Up to 5 bullets per section. Fewer is fine — NEVER invent, pad, or repeat to reach five.
+            - Include only notable, user-facing NEW features. Skip bug fixes, dependency bumps, version-only
+              changes, internal refactors, and CI changes.
+            - Condense related changes into a single bullet.
+            - Respect the character limits strictly. Rewrite until the feature is <= 20 chars and the description <= 75 chars.
+            - If a product has no notable features this week, output its heading followed by one line: _No notable updates this week._
+
+            OUTPUT REQUIREMENTS:
+            - Output ONLY the four sections. No title, no preamble, no commentary, no code fences.
+            - Start directly with "## GitHub Copilot app".
+            """;
+
+        var prompt = BuildFeatureBulletsPrompt(
+            cliReleases,
+            sdkReleases,
+            appReleases,
+            vscodeFeatures,
+            vscodeStableHighlights,
+            vscodeReleaseNotesUrl,
+            vscodeStableVersionUrl,
+            weekStart,
+            weekEnd);
+
+        return await GenerateCachedSectionAsync(
+            "feature-bullets",
+            sourceDataJson,
+            systemMessage,
+            prompt,
+            cache,
+            model,
+            "feature bullet points");
+    }
+
+    private static string BuildFeatureBulletsPrompt(
+        List<ReleaseEntry> cliReleases,
+        List<ReleaseEntry> sdkReleases,
+        List<ReleaseEntry> appReleases,
+        List<VSCodeFeature> vscodeFeatures,
+        List<string> vscodeStableHighlights,
+        string? vscodeReleaseNotesUrl,
+        string? vscodeStableVersionUrl,
+        DateOnly weekStart,
+        DateOnly weekEnd)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine($"""
+            Produce feature bullet points for slides covering {weekStart:MMMM d} to {weekEnd:MMMM d, yyyy}.
+
+            Summarize from the raw release notes below — do not copy them verbatim.
+            Follow the four-section structure and the strict bullet format from your instructions exactly.
+
+            """);
+
+        AppendReleases(sb, "GitHub Copilot app release notes", appReleases);
+        AppendReleases(sb, "GitHub Copilot CLI release notes", cliReleases);
+        AppendReleases(sb, "GitHub Copilot SDK release notes", sdkReleases);
+
+        sb.AppendLine("## VS Code release notes");
+        sb.AppendLine();
+        if (vscodeStableHighlights.Count == 0 && vscodeFeatures.Count == 0)
+        {
+            sb.AppendLine("_(No VS Code release notes this week.)_");
+        }
+        else
+        {
+            if (!string.IsNullOrWhiteSpace(vscodeStableVersionUrl))
+                sb.AppendLine($"Stable release notes: {VSCodeReleaseNotes.GetWebsiteUrlFromRawUrl(vscodeStableVersionUrl)}");
+            if (!string.IsNullOrWhiteSpace(vscodeReleaseNotesUrl))
+                sb.AppendLine($"Insiders release notes: {vscodeReleaseNotesUrl}");
+            sb.AppendLine();
+
+            if (vscodeStableHighlights.Count > 0)
+            {
+                sb.AppendLine("Stable highlights:");
+                foreach (var highlight in vscodeStableHighlights)
+                    sb.AppendLine($"- {highlight}");
+                sb.AppendLine();
+            }
+
+            if (vscodeFeatures.Count > 0)
+            {
+                sb.AppendLine("Insiders features:");
+                foreach (var feature in vscodeFeatures)
+                    sb.AppendLine($"- [{feature.Category}] {feature.Title}: {feature.Description}");
+                sb.AppendLine();
+            }
+        }
+
+        return sb.ToString();
     }
 
     public async Task<string> ReviseNewsletterMarkdownAsync(
@@ -953,7 +1098,8 @@ public partial class NewsletterService(
         No emoji in bullets.
         Keep bullet descriptions to one sentence, ideally under 25 words.
         OUTPUT: Only the requested Markdown section. No preamble, no commentary, no code fences.
-        Start directly with the --- separator and ## heading.
+        Start directly with the ## heading. Section separators are added when the
+        newsletter is assembled; do not add horizontal rules.
         """;
 
     private async Task<string> GenerateCachedSectionAsync(
@@ -1206,8 +1352,12 @@ public partial class NewsletterService(
         sb.AppendLine($"""
             Generate the "Developer Blogs" section for a DevTech MVP newsletter covering {weekStart:MMMM d} to {weekEnd:MMMM d, yyyy}.
 
-            Curate the most interesting 5-8 posts across .NET, Azure, Aspire, TypeScript, GitHub Blog, and developer.microsoft.com blogs.
-            Group by topic area. Be highly selective - only include posts that would interest an MVP audience.
+            Curate the most interesting 6-10 updates across .NET, Azure, Aspire, TypeScript, GitHub Blog, and the Microsoft Developer Changelog.
+            Group by topic area. The changelog includes updates from several of the other sources, so do not repeat the same URL.
+            Be selective - only include updates that would interest an MVP audience, but lean toward including a high-quality update rather than cutting it.
+            Give extra weight to posts with broad audience appeal - for example, a post that spans multiple topics or
+            products (such as .NET plus the GitHub Copilot app) is more valuable than a narrow single-topic post and
+            should be favored when deciding what makes the cut.
             Each bullet: - **[Title](url)** - one SHORT sentence summary (under 20 words).
             Brevity is critical. State what changed or shipped, not background context.
 
@@ -1311,7 +1461,7 @@ public partial class NewsletterService(
             - 🚀 **[TypeScript 6.0 released](https://devblogs.microsoft.com/typescript/...)** - ships with isolated declarations
             - 🔧 **[Copilot CLI v1.2](https://github.com/github/copilot-cli/releases)** - adds streaming output
 
-            After the bullets, add a short transition sentence like:
+            After the bullets, add a short transition sentence like this (you can vary this):
             "That's it! You're caught up now! Details below if you want to know more."
 
             Output exactly this format:
@@ -1581,9 +1731,21 @@ public partial class NewsletterService(
 
             Pick the 4–6 most impactful developer-facing highlights for the week.
 
+            WEEKLY SUMMARY (required):
+            - Immediately after the "## {productName} Updates" header, write a short plain-text summary
+              of what changed for this product this week, BEFORE any per-version sub-sections.
+            - Readers rely on this summary, so always include it. Scale it to the amount of activity:
+              a single sentence is enough for one or two releases; use 2-3 sentences (or a few short
+              lead bullets) when there are several releases or a big theme.
+            - Frame the week at a high level (the main themes), do not restate every bullet below.
+            - Use literal wording like "adds", "changes", "supports", "requires", and "fixes".
+              Do NOT use marketing or hype language.
+
             Output ONLY the Markdown below (no extra text). Follow this exact structure:
 
             ## {productName} Updates
+
+            <one or two sentences summarizing this week's {productName} changes at a high level>
 
             <one sub-section per version with MAXIMUM 6 bullets (ideally 3-5), highly condensed thematic summaries.
              Use **bold labels** to categorize each bullet. Do NOT use emojis.>

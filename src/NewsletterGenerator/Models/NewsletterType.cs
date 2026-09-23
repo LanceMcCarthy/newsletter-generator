@@ -4,5 +4,6 @@ public enum NewsletterType
 {
     CopilotCliSdk,
     VSCode,
-    DevTechMVP
+    DevTechMVP,
+    FeatureBullets
 }

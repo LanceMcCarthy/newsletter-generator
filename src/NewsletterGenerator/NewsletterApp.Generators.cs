@@ -512,7 +512,7 @@ internal static partial class NewsletterApp
         contentBuilder.AppendLine("Welcome");
         contentBuilder.AppendLine("--------");
         contentBuilder.AppendLine();
-        contentBuilder.AppendLine("This is your weekly update for GitHub Copilot CLI, SDK, and app! Feel free to forward internally and encourage your co-workers to subscribe at [https://aka.ms/copilot-cli-insiders/join](https://aka.ms/copilot-cli-insiders/join) and forward this newsletter around!");
+        contentBuilder.AppendLine("This is your weekly update for GitHub Copilot CLI, SDK, and app! Feel free to forward internally and encourage your co-workers to subscribe at [https://aka.ms/github-copilot-insiders/join](https://aka.ms/github-copilot-insiders/join) and forward this newsletter around!");
         contentBuilder.AppendLine();
         contentBuilder.AppendLine(welcomeSummary);
         contentBuilder.AppendLine();
@@ -535,6 +535,177 @@ internal static partial class NewsletterApp
         return (contentBuilder.ToString(), defaultTitle);
     }
 
+    private static async Task<(string? Content, string Title)> GenerateFeatureBulletsAsync(
+        DateOnly weekStart,
+        DateOnly weekEnd,
+        CacheService cache,
+        string selectedModel,
+        ILoggerFactory loggerFactory,
+        RunMetrics metrics,
+        bool debug)
+    {
+        var defaultTitle = "Weekly Feature Bullet Points";
+        var feedService = new AtomFeedService(loggerFactory.CreateLogger<AtomFeedService>(), feedCache: cache);
+        var vscodeService = new VSCodeReleaseNotesService();
+        var log = loggerFactory.CreateLogger("FeatureBullets");
+
+        List<ReleaseEntry> cliReleases = [];
+        List<ReleaseEntry> sdkReleases = [];
+        List<ReleaseEntry> appReleases = [];
+        FeedFetchResult? cliFetchResult = null;
+        FeedFetchResult? sdkFetchResult = null;
+        FeedFetchResult? appFetchResult = null;
+        VSCodeReleaseNotesFetchResult? vscodeNotesResult = null;
+
+        // Feature bullets draw ONLY from release notes — no blog, changelog, or office-hours sources.
+        await AnsiConsole.Progress().AutoClear(false).HideCompleted(false).StartAsync(async ctx =>
+        {
+            const string cliLabel = "Copilot CLI releases";
+            const string sdkLabel = "Copilot SDK releases";
+            const string appLabel = "Copilot app releases";
+            const string vscodeLabel = "VS Code release notes";
+
+            var cliTask = AddInactiveTask(ctx, cliLabel);
+            var sdkTask = AddInactiveTask(ctx, sdkLabel);
+            var appTask = AddInactiveTask(ctx, appLabel);
+            var vscodeTask = AddInactiveTask(ctx, vscodeLabel);
+
+            cliFetchResult = await RunTrackedTaskAsync(
+                cliTask,
+                cliLabel,
+                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.CliAtom, weekStart, weekEnd),
+                metrics,
+                "Fetch: Copilot CLI releases");
+            cliReleases = cliFetchResult.Entries;
+
+            sdkFetchResult = await RunTrackedTaskAsync(
+                sdkTask,
+                sdkLabel,
+                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.SdkAtom, weekStart, weekEnd),
+                metrics,
+                "Fetch: Copilot SDK releases");
+            sdkReleases = sdkFetchResult.Entries;
+
+            appFetchResult = await RunTrackedTaskAsync(
+                appTask,
+                appLabel,
+                () => feedService.FetchFeedWithMetricsAsync(FeedUrls.AppAtom, weekStart, weekEnd),
+                metrics,
+                "Fetch: Copilot app releases");
+            appReleases = appFetchResult.Entries;
+
+            vscodeNotesResult = await RunTrackedTaskAsync(
+                vscodeTask,
+                vscodeLabel,
+                () => vscodeService.GetReleaseNotesFetchResultForDateRangeAsync(weekStart, weekEnd),
+                metrics,
+                "Fetch: VS Code release notes");
+        });
+
+        (cliReleases, _) = ConsolidateAndTrack("Copilot CLI releases", cliReleases, cliFetchResult, metrics);
+        (sdkReleases, _) = ConsolidateAndTrack("Copilot SDK releases", sdkReleases, sdkFetchResult, metrics);
+        (appReleases, _) = ConsolidateAndTrack("Copilot app releases", appReleases, appFetchResult, metrics);
+
+        var vscodeReleaseNotes = vscodeNotesResult?.ReleaseNotes;
+        var vscodeFeatures = vscodeReleaseNotes?.Features ?? [];
+        var vscodeStableHighlights = vscodeNotesResult?.StableHighlights ?? [];
+        var vscodeItemCount = vscodeFeatures.Count + vscodeStableHighlights.Count;
+
+        metrics.SourceCounts.Add(new SourceCount(
+            "Copilot CLI releases",
+            (cliFetchResult?.TotalItems ?? 0).ToString(),
+            (cliFetchResult?.InRangeItems ?? 0).ToString(),
+            cliReleases.Count.ToString(),
+            "Release notes only"));
+        metrics.SourceCounts.Add(new SourceCount(
+            "Copilot SDK releases",
+            (sdkFetchResult?.TotalItems ?? 0).ToString(),
+            (sdkFetchResult?.InRangeItems ?? 0).ToString(),
+            sdkReleases.Count.ToString(),
+            "Release notes only"));
+        metrics.SourceCounts.Add(new SourceCount(
+            "Copilot app releases",
+            (appFetchResult?.TotalItems ?? 0).ToString(),
+            (appFetchResult?.InRangeItems ?? 0).ToString(),
+            appReleases.Count.ToString(),
+            "Release notes only"));
+        metrics.SourceCounts.Add(new SourceCount(
+            "VS Code release notes",
+            (vscodeNotesResult?.CandidateUrlCount ?? 0).ToString(),
+            (vscodeNotesResult?.MatchedSectionCount ?? 0).ToString(),
+            vscodeItemCount.ToString(),
+            $"{vscodeStableHighlights.Count} stable + {vscodeFeatures.Count} insiders"));
+
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .BorderColor(Color.Grey)
+            .AddColumn(new TableColumn("[bold]Source[/]").LeftAligned())
+            .AddColumn(new TableColumn("[bold]Items[/]").Centered())
+            .AddColumn(new TableColumn("[bold]Recent entries[/]").LeftAligned());
+
+        table.AddRow("[cornflowerblue]Copilot CLI releases[/]", FormatCountCell(cliReleases.Count), FormatItemsCell(cliReleases));
+        table.AddRow("[cornflowerblue]Copilot SDK releases[/]", FormatCountCell(sdkReleases.Count), FormatItemsCell(sdkReleases));
+        table.AddRow("[cornflowerblue]Copilot app releases[/]", FormatCountCell(appReleases.Count), FormatItemsCell(appReleases));
+        table.AddRow("[cornflowerblue]VS Code release notes[/]", FormatCountCell(vscodeItemCount), $"{vscodeStableHighlights.Count} stable, {vscodeFeatures.Count} insiders");
+
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+
+        if (cliReleases.Count == 0 && sdkReleases.Count == 0 && appReleases.Count == 0 && vscodeItemCount == 0)
+        {
+            log.LogWarning("No release notes found for date range {Start} to {End}", weekStart, weekEnd);
+            AnsiConsole.MarkupLine($"[yellow]⚠[/] No release notes found in [bold]{weekStart:yyyy-MM-dd}[/] to [bold]{weekEnd:yyyy-MM-dd}[/].");
+            return (null, defaultTitle);
+        }
+
+        var newsletterService = new NewsletterService(
+            loggerFactory.CreateLogger<NewsletterService>(),
+            BuildRunContextKey(NewsletterType.FeatureBullets, weekStart, weekEnd));
+        string content = string.Empty;
+
+        await AnsiConsole.Progress().AutoClear(false).HideCompleted(false).StartAsync(async ctx =>
+        {
+            const string bulletsLabel = "Generate feature bullet points";
+            var bulletsTask = AddInactiveTask(ctx, bulletsLabel);
+
+            try
+            {
+                content = await RunTrackedTaskAsync(
+                    bulletsTask,
+                    bulletsLabel,
+                    () => newsletterService.GenerateFeatureBulletsAsync(
+                        cliReleases,
+                        sdkReleases,
+                        appReleases,
+                        vscodeFeatures,
+                        vscodeStableHighlights,
+                        vscodeReleaseNotes?.WebsiteUrl,
+                        vscodeNotesResult?.StableVersionUrl,
+                        weekStart,
+                        weekEnd,
+                        cache,
+                        selectedModel),
+                    metrics,
+                    "Generate: Feature bullet points");
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex, "Error generating feature bullet points");
+                RenderFriendlyException(ex, debug);
+            }
+        });
+
+        metrics.CopilotUsage.AddRange(newsletterService.GetUsageMetricsSnapshot());
+
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            AnsiConsole.MarkupLine("[yellow]⚠[/] Empty feature bullet points result.");
+            return (null, defaultTitle);
+        }
+
+        return (content, defaultTitle);
+    }
+
     private static async Task<(string? Content, string Title)> GenerateDevTechNewsletterAsync(
         DateOnly weekStart,
         DateOnly weekEnd,
@@ -544,7 +715,7 @@ internal static partial class NewsletterApp
         RunMetrics metrics,
         bool debug)
     {
-        var defaultTitle = "DevTech MVP Weekly Newsletter";
+        var defaultTitle = "Dev Tech Digest";
         var feedService = new AtomFeedService(loggerFactory.CreateLogger<AtomFeedService>(), feedCache: cache);
         var vscodeService = new VSCodeReleaseNotesService();
         var log = loggerFactory.CreateLogger("DevTechNewsletter");
@@ -565,6 +736,7 @@ internal static partial class NewsletterApp
             ("typeScript",  "TypeScript blog",       FeedUrls.TypeScriptBlog,       true,  800,  "Blog posts"),
             ("agentFx",     "Agent Framework blog",  FeedUrls.AgentFrameworkBlog,    true,  800,  "Blog posts"),
             ("githubBlog",  "GitHub blog",           FeedUrls.GitHubBlog,           true,  800,  "Blog posts"),
+            ("devChangelog", "Developer changelog",  FeedUrls.DeveloperChangelog,   true,  600,  "Changelog items"),
             ("ytDotNet",    "YouTube .NET",          FeedUrls.YouTubeDotNet,        true,  500,  "Videos"),
             ("ytVS",        "YouTube Visual Studio", FeedUrls.YouTubeVisualStudio,  true,  500,  "Videos"),
             ("ytVSCode",    "YouTube VS Code",       FeedUrls.YouTubeVSCode,        true,  500,  "Videos"),
@@ -621,6 +793,7 @@ internal static partial class NewsletterApp
         var typeScriptBlogEntries = Entries("typeScript");
         var agentFxBlogEntries = Entries("agentFx");
         var githubBlogEntries = Entries("githubBlog");
+        var developerChangelogEntries = Entries("devChangelog");
         var youtubeDotNetEntries = Entries("ytDotNet");
         var youtubeVSEntries = Entries("ytVS");
         var youtubeVSCodeEntries = Entries("ytVSCode");
@@ -696,6 +869,10 @@ internal static partial class NewsletterApp
         // Detect major releases from blog pool
         List<ReleaseEntry> blogPool = [..dotNetBlogEntries, ..devBlogEntries, ..azureBlogEntries,
             ..aspireBlogEntries, ..typeScriptBlogEntries, ..agentFxBlogEntries, ..githubBlogEntries];
+        var developerUpdatesPool = blogPool
+            .Concat(developerChangelogEntries)
+            .DistinctBy(entry => entry.Url, StringComparer.OrdinalIgnoreCase)
+            .ToList();
         var majorReleases = NewsletterService.DetectMajorReleases(blogPool);
         var majorReleaseTitles = majorReleases.Select(e => e.Version).ToList();
 
@@ -761,7 +938,7 @@ internal static partial class NewsletterApp
 
             var blogsWork = RunTrackedTaskAsync(blogsTask, blogsLabel,
                 () => newsletterService.GenerateDevTechBlogsSectionAsync(
-                    blogPool, majorReleaseTitles, weekStart, weekEnd, cache, selectedModel),
+                    developerUpdatesPool, majorReleaseTitles, weekStart, weekEnd, cache, selectedModel),
                 metrics, "Generate: Developer Blogs section");
 
             var videosWork = RunTrackedTaskAsync(videosTask, videosLabel,
@@ -815,13 +992,18 @@ internal static partial class NewsletterApp
 
         // Assemble final content
         var contentBuilder = new StringBuilder();
-        contentBuilder.AppendLine(welcomeSection);
+        contentBuilder.AppendLine(NormalizeDevTechWelcome(welcomeSection));
         contentBuilder.AppendLine();
 
         List<string> allBodySections = [copilotSection, vscodeSection, vsSection, .. majorReleaseSections, blogsSection, videosSection];
         foreach (var section in allBodySections.Where(s => !string.IsNullOrWhiteSpace(s)))
         {
-            contentBuilder.AppendLine(section);
+            var normalizedSection = NormalizeDevTechSection(section);
+            if (string.IsNullOrWhiteSpace(normalizedSection))
+                continue;
+
+            contentBuilder.AppendLine("---");
+            contentBuilder.AppendLine(normalizedSection);
             contentBuilder.AppendLine();
         }
 

@@ -126,6 +126,17 @@ internal static partial class NewsletterApp
                         metrics,
                         settings.Debug);
                 }
+                else if (selectedNewsletter == NewsletterType.FeatureBullets)
+                {
+                    (content, title) = await GenerateFeatureBulletsAsync(
+                        weekStartDate,
+                        weekEndDate,
+                        cache,
+                        selectedModel,
+                        loggerFactory,
+                        metrics,
+                        settings.Debug);
+                }
                 else
                 {
                     (content, title) = await GenerateCopilotNewsletterAsync(
@@ -323,6 +334,9 @@ internal static partial class NewsletterApp
             "devtech" => NewsletterType.DevTechMVP,
             "devtech-mvp" => NewsletterType.DevTechMVP,
             "mvp" => NewsletterType.DevTechMVP,
+            "bullets" => NewsletterType.FeatureBullets,
+            "slides" => NewsletterType.FeatureBullets,
+            "feature-bullets" => NewsletterType.FeatureBullets,
             _ => null
         };
     }
@@ -336,13 +350,15 @@ internal static partial class NewsletterApp
                 .AddChoices([
                     "GitHub Copilot CLI/SDK/app",
                     "VS Code",
-                    "DevTech MVP"
+                    "DevTech MVP",
+                    "Feature Bullet Points"
                 ]));
 
         return choice switch
         {
             "VS Code" => NewsletterType.VSCode,
             "DevTech MVP" => NewsletterType.DevTechMVP,
+            "Feature Bullet Points" => NewsletterType.FeatureBullets,
             _ => NewsletterType.CopilotCliSdk
         };
     }
@@ -370,7 +386,8 @@ internal static partial class NewsletterApp
     internal static string GetNewsletterLabel(NewsletterType type) => type switch
     {
         NewsletterType.VSCode => "VS Code",
-        NewsletterType.DevTechMVP => "DevTech MVP",
+        NewsletterType.DevTechMVP => "Dev Tech Digest",
+        NewsletterType.FeatureBullets => "Feature Bullet Points",
         _ => "GitHub Copilot CLI/SDK/app"
     };
 
@@ -378,6 +395,7 @@ internal static partial class NewsletterApp
     {
         NewsletterType.VSCode => "vscode",
         NewsletterType.DevTechMVP => "devtech-mvp",
+        NewsletterType.FeatureBullets => "feature-bullets",
         _ => "copilot-cli-sdk"
     };
 
@@ -516,6 +534,40 @@ internal static partial class NewsletterApp
         }
 
         return string.Join('\n', result);
+    }
+
+    private static string NormalizeDevTechSection(string section)
+    {
+        var lines = section.Split('\n').ToList();
+
+        while (lines.Count > 0 &&
+               (string.IsNullOrWhiteSpace(lines[0]) ||
+                lines[0].Trim() == "---" ||
+                lines[0].Trim() == "* * * * *"))
+        {
+            lines.RemoveAt(0);
+        }
+
+        return string.Join('\n', lines).Trim();
+    }
+
+    private static string NormalizeDevTechWelcome(string welcome)
+    {
+        var lines = welcome.Split('\n').ToList();
+
+        while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[^1]))
+            lines.RemoveAt(lines.Count - 1);
+
+        while (lines.Count > 0 &&
+               (lines[^1].Trim() == "---" ||
+                lines[^1].Trim() == "* * * * *"))
+        {
+            lines.RemoveAt(lines.Count - 1);
+            while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[^1]))
+                lines.RemoveAt(lines.Count - 1);
+        }
+
+        return string.Join('\n', lines).Trim();
     }
 
     // ── Copilot startup & model selection ───────────────────────────────────
@@ -791,8 +843,9 @@ internal static partial class NewsletterApp
 
             var selectedLabel = AnsiConsole.Prompt(
                 new SelectionPrompt<string>()
-                    .Title("[yellow]Select a model[/]")
+                    .Title($"[yellow]Select a model[/] [dim]({models.Count} available)[/]")
                     .PageSize(12)
+                    .MoreChoicesText("[grey](Move up and down to see all models)[/]")
                     .AddChoices(labels));
 
             var selectedIndex = labels.FindIndex(label => label == selectedLabel);
